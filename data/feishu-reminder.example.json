@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "timezone": "Asia/Shanghai",
+  "reminder_hour": 9,
+  "plan_warning_days": {"deepseek": 3, "glm": 7}
+}

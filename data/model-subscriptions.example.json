@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "timezone": "Asia/Shanghai",
+  "updated_at": null,
+  "plans": [
+    {
+      "id": "openai-api",
+      "name": "OpenAI API",
+      "agent": "Codex",
+      "provider": "OpenAI",
+      "model": null,
+      "timezone": "Asia/Shanghai",
+      "billing": {
+        "type": "usage_based",
+        "renewal_date": null,
+        "renewal_interval_days": 30,
+        "renewal_warning_days": 7
+      },
+      "reset": {
+        "type": "monthly",
+        "day_of_month": 1,
+        "time": "00:00",
+        "timezone": "Asia/Shanghai"
+      },
+      "quota": {
+        "unit": "usd",
+        "limit": null,
+        "warning_threshold_pct": 20
+      },
+      "usage": {
+        "used": null,
+        "as_of": null,
+        "source": "manual"
+      },
+      "routing": {
+        "provider_key": null,
+        "priority": 50,
+        "reserve_pct": 10
+      }
+    },
+    {
+      "id": "claude-subscription",
+      "name": "Claude Subscription",
+      "agent": "Claude Code",
+      "provider": "Anthropic",
+      "model": null,
+      "timezone": "Asia/Shanghai",
+      "billing": {
+        "type": "subscription",
+        "renewal_date": null,
+        "renewal_interval_days": 30,
+        "renewal_warning_days": 7
+      },
+      "reset": {
+        "type": "monthly",
+        "day_of_month": null,
+        "time": "00:00",
+        "timezone": "Asia/Shanghai"
+      },
+      "quota": {
+        "unit": "credits",
+        "limit": null,
+        "warning_threshold_pct": 20
+      },
+      "usage": {
+        "used": null,
+        "as_of": null,
+        "source": "manual"
+      },
+      "routing": {
+        "provider_key": null,
+        "priority": 40,
+        "reserve_pct": 10
+      }
+    },
+    {
+      "id": "cursor-subscription",
+      "name": "Cursor Subscription",
+      "agent": "Cursor",
+      "provider": "Cursor",
+      "model": null,
+      "timezone": "Asia/Shanghai",
+      "billing": {
+        "type": "subscription",
+        "renewal_date": null,
+        "renewal_interval_days": 30,
+        "renewal_warning_days": 7
+      },
+      "reset": {
+        "type": "monthly",
+        "day_of_month": null,
+        "time": "00:00",
+        "timezone": "Asia/Shanghai"
+      },
+      "quota": {
+        "unit": "requests",
+        "limit": null,
+        "warning_threshold_pct": 20
+      },
+      "usage": {
+        "used": null,
+        "as_of": null,
+        "source": "manual"
+      },
+      "routing": {
+        "provider_key": null,
+        "priority": 30,
+        "reserve_pct": 10
+      }
+    }
+  ],
+  "notes": [
+    "This file is a placeholder template. Copy real plans into data/model-subscriptions.json and replace nulls with real renewal, quota, usage, and provider_key values."
+  ]
+}

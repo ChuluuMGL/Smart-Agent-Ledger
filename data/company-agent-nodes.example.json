@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "nodes": [
+    {
+      "name": "local-mac",
+      "type": "local_agent_ledger",
+      "host": "127.0.0.1",
+      "timeout_seconds": 60,
+      "enabled": true
+    },
+    {
+      "name": "dev-machine-1",
+      "base_url": "http://192.0.2.100:8002",
+      "base_url_candidates": [
+        "http://dev-machine-1.local:8002"
+      ],
+      "role": "agent_ledger_readonly_collector",
+      "timeout_seconds": 60,
+      "enabled": true
+    },
+    {
+      "name": "dev-machine-1-file-fallback",
+      "type": "agent_ledger_file",
+      "host": "shared-directory",
+      "ledger_path": "data/fleet-exports/dev-machine-1-agent-ledger.json",
+      "enabled": false
+    },
+    {
+      "name": "automation-n8n",
+      "type": "n8n_ssh",
+      "host": "example.aliyun.com",
+      "user": "root",
+      "ssh_key_path": "/absolute/path/to/readonly-key.pem",
+      "db_path": "/root/.n8n/database.sqlite",
+      "timeout_seconds": 8,
+      "enabled": false
+    }
+  ],
+  "authorized_networks": ["192.0.2.0/24"],
+  "discovery": {"active_scan": false, "passive_arp": false}
+}

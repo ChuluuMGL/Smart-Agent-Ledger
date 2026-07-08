@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Agent Ledger | Local AI Agent Usage Dashboard</title>
+  <meta name="description" content="Smart Agent Ledger - Professional developer dashboard providing real-time AI agent tracking, fallback cost analysis, and local token ledger synchronization." />
+  <!-- Security: this local dashboard is not intended for search indexing. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <!-- Embedded local favicon. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%2300d2ff'/%3E%3Cstop offset='100%25' stop-color='%238a2be2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='128' height='128' rx='28' fill='%23090a10'/%3E%3Cpath d='M34 64 C34 44, 44 34, 64 34 C84 34, 94 44, 94 64 C94 84, 84 94, 64 94 C44 94, 34 84, 34 64 Z' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M44 64 H84 M64 44 V84' stroke='%2300f5a0' stroke-width='6' stroke-linecap='round' opacity='0.85'/%3E%3Ccircle cx='64' cy='64' r='8' fill='%23ffffff'/%3E%3Ccircle cx='44' cy='64' r='5' fill='%2300d2ff'/%3E%3Ccircle cx='84' cy='64' r='5' fill='%238a2be2'/%3E%3Ccircle cx='64' cy='44' r='5' fill='%2300f5a0'/%3E%3Ccircle cx='64' cy='84' r='5' fill='%23ffb700'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="dashboard.css?v=202606130930" />
+</head>
+<body>
+<!-- Ambient Glow Elements -->
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+<div class="bg-glow bg-glow-3"></div>
+
+<!-- Chart Tooltip -->
+<div id="chart-tooltip" class="chart-tooltip"></div>
+
+<div id="app" class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand-row">
+      <span class="logo"><i data-lucide="network"></i></span>
+      <span class="brand-text" data-i18n="brand-text">Agent Ledger</span>
+      <button class="collapse-btn" id="collapseBtn" title="收起侧栏" data-i18n-title="collapse-btn-title"><i data-lucide="chevron-left"></i></button>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-btn active" data-target="overview"><i data-lucide="layout-dashboard"></i> <span data-i18n="nav-overview">总览</span></button>
+      <button class="nav-btn" data-target="agents"><i data-lucide="bot"></i> <span data-i18n="nav-agents">Agent</span></button>
+      <button class="nav-btn" data-target="projects"><i data-lucide="folder-git-2"></i> <span data-i18n="nav-projects">项目</span></button>
+      <button class="nav-btn" data-target="fleet"><i data-lucide="network"></i> <span data-i18n="nav-fleet">团队节点</span></button>
+      <button class="nav-btn" data-target="settings"><i data-lucide="settings"></i> <span data-i18n="nav-settings">设置</span></button>
+    </nav>
+    <div class="sidebar-foot" id="sidebarFoot">
+      <div class="sidebar-foot-row">
+        <span id="sidebar-note">近 30 天</span>
+        <span class="badge">v1.2.5</span>
+      </div>
+      <div style="margin-top:2px;">
+        <span class="company-link">Open source</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="workspace">
+    <header class="command-bar">
+      <div class="title-group">
+        <h1 class="page-title" data-i18n="page-title">Smart Agent Ledger</h1>
+        <p class="page-sub" data-i18n="page-sub">多 Agent 用量账本 · 实时仪表盘</p>
+      </div>
+      <div class="top-actions">
+        <div class="filter-bar" id="filterBar">
+          <div class="filter-group">
+            <label data-i18n="label-time">时间</label>
+            <div class="btn-group" id="daysGroup">
+              <button class="btn-sm" data-days="7" data-i18n="btn-7d">7天</button>
+              <button class="btn-sm active" data-days="30" data-i18n="btn-30d">30天</button>
+              <button class="btn-sm" data-days="90" data-i18n="btn-90d">90天</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <label data-i18n="label-agent">Agent</label>
+            <select class="select-sm" id="agentFilter"><option value="all" data-i18n="all">全部</option></select>
+          </div>
+          <div class="filter-group">
+            <label data-i18n="label-data">数据</label>
+            <div class="btn-group" id="dataModeGroup">
+              <button class="btn-sm active" data-mode="token" data-i18n="btn-token-only">仅Token</button>
+              <button class="btn-sm" data-mode="all" data-i18n="btn-all">全部</button>
+            </div>
+          </div>
+        </div>
+        <div class="top-status-actions">
+          <span class="health-pill" id="healthPill"></span>
+          <span class="refresh-state" id="refreshState"></span>
+          <div class="action-buttons">
+            <button class="icon-btn" id="displayToggle" title="切换显示模式" data-i18n-title="display-toggle-title"><i data-lucide="maximize-2"></i></button>
+            <button class="icon-btn" id="langToggle" title="Switch Language / 切换语言"><i data-lucide="languages"></i></button>
+            <button class="icon-btn" id="refreshBtn" title="刷新数据" data-i18n-title="refresh-btn-title"><i data-lucide="rotate-cw"></i></button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div id="loading" class="loading" data-i18n="loading">正在加载数据…</div>
+    <div id="demoBanner" class="demo-banner" hidden></div>
+    <div id="content" class="content" style="display:none">
+
+      <!-- 01 总览 -->
+      <section id="overview">
+        <div class="wall-band">
+          <div class="hero-text"><h2 data-i18n="hero-title">AI Agent 用量账本</h2><p data-i18n="hero-sub">多 Agent · 智能路由 · 实时监控</p></div>
+          <div class="signal-panel">
+            <div id="signal-chips" class="signal-row"></div>
+          </div>
+        </div>
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div id="subscriptionAlerts" class="overview-alerts"></div>
+        <div class="overview-grid">
+          <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <strong data-i18n="agent-status-title">Agent 接入状态</strong>
+              <span id="cost-note" class="subtle"></span>
+            </div>
+            <div id="agentSnapshot"></div>
+          </div>
+          <div class="panel" id="trustNote">
+            <strong data-i18n="data-explain-title">数据说明</strong>
+            <ul id="missing-explain" style="margin-top:10px;list-style:disc;padding-left:20px;"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 02 Agent -->
+      <section id="agents">
+        <h2 class="section-title" data-i18n="sec-agent-list">Agent 清单</h2>
+        <div class="agent-grid" id="agentInventory"></div>
+      </section>
+
+      <!-- 03 项目 -->
+      <section id="projects">
+        <h2 class="section-title" data-i18n="sec-projects">项目进度</h2>
+        <div class="table-wrap" id="projectTable"></div>
+      </section>
+
+      <!-- 04 团队节点 -->
+      <section id="fleet">
+        <h2 class="section-title" data-i18n="sec-fleet">团队节点</h2>
+        <div class="overview-grid">
+          <div class="panel" id="fleetNodeStatus"></div>
+          <div class="panel" id="fleetSummary"></div>
+        </div>
+      </section>
+
+      <!-- 05 管理 -->
+      <section id="settings">
+        <h2 class="section-title" data-i18n="sec-settings">管理</h2>
+        <div class="management-layout">
+          <div class="management-main">
+            <div class="control-grid">
+              <div class="panel"><label data-i18n="sett-range">数据范围</label><div class="btn-group" id="settDays"><button class="btn-sm" data-days="7" data-i18n="btn-7d">7天</button><button class="btn-sm active" data-days="30" data-i18n="btn-30d">30天</button><button class="btn-sm" data-days="90" data-i18n="btn-90d">90天</button></div></div>
+              <div class="panel"><label data-i18n="sett-max-records">最大记录</label><input type="number" id="settLimit" value="120" min="10" max="500" step="10"></div>
+              <div class="panel"><label data-i18n="sett-interval">刷新间隔</label><div><input type="number" id="settRefresh" value="30" min="5" max="300" step="5" style="width: 70px; display: inline-block;"> <span data-i18n="seconds-unit"> 秒</span></div></div>
+              <div class="panel"><label data-i18n="sett-auto-refresh">自动刷新</label><button class="toggle-btn active" id="settAutoRefresh">ON</button></div>
+            </div>
+
+            <div class="management-grid">
+              <div class="panel" id="settProviders"><div id="stats"></div></div>
+              <div class="panel" id="nodeOpsPanel"><h3 data-i18n="node-ops-title">健康检查</h3><div id="nodeOpsSummary" class="subtle" style="margin-top:10px;"></div></div>
+            </div>
+
+            <details class="management-details">
+              <summary><span data-i18n="management-diagnostics">排错</span></summary>
+              <div class="management-grid">
+                <div class="panel" id="subSummary"></div>
+                <div class="panel" id="subAdvice"><div id="routing-advice"></div></div>
+              </div>
+              <div class="table-wrap" id="planTable" style="margin-top:1rem"></div>
+              <div class="management-grid">
+                <div id="feishuConfig" class="panel"></div>
+                <div class="panel" id="settRouting"><div id="config"></div></div>
+                <div class="panel" id="settDataNotes"><h3 data-i18n="h3-source-notes">数据源备注</h3><div id="fleetNotes" class="subtle" style="margin-top:10px;"></div></div>
+              </div>
+              <div class="panel" id="settSessions">
+                <h3 data-i18n="sec-sessions">会话明细</h3>
+                <p class="admin-note" data-i18n="admin-sessions-note">管理员视图 · 用于排查具体会话的 token 消耗。日常关注请看 Agent 和项目。</p>
+                <div class="table-wrap" id="sessionTable"></div>
+              </div>
+            </details>
+          </div>
+
+          <aside class="management-side">
+            <div class="panel" id="monthlyReportPanel">
+              <h3 data-i18n="monthly-report-title">月报导出</h3>
+              <p class="subtle" data-i18n="monthly-report-desc" style="margin-top:10px;">生成当前窗口的 Markdown 月报，文件只保存在本机 reports 目录。</p>
+              <button class="setting-button" id="exportMonthlyReport" data-i18n="monthly-report-button" style="margin-top:12px;">生成月报</button>
+              <div id="monthlyReportStatus" class="subtle" style="margin-top:10px;"></div>
+            </div>
+            <div class="panel" id="settPaths"><h3 data-i18n="h3-config-paths">配置文件</h3><div id="configPaths" class="subtle" style="margin-top:10px;"></div></div>
+            <div class="panel" id="settNotes"><h3 data-i18n="h3-ledger-notes">账本备注</h3><div id="ledger-notes" class="subtle" style="margin-top:10px;"></div></div>
+          </aside>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Footer -->
+    <footer class="workspace-foot">
+      <div class="foot-left">
+        <span class="company-link">Smart Agent Ledger</span>
+        <span class="divider">|</span>
+        <span data-i18n="foot-desc">本地优先的 AI Agent 用量账本</span>
+      </div>
+      <div class="foot-right">
+        <span class="version-label">v1.2.5-stable</span>
+      </div>
+    </footer>
+  </main>
+<!-- Session Detail Modal -->
+<div id="sessionDetailModal" class="modal-overlay" style="display:none">
+  <div class="modal-container">
+    <div class="modal-header">
+      <h3 id="modalTitle">会话详情</h3>
+      <button class="modal-close" id="modalCloseBtn">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <!-- Dynamic content -->
+    </div>
+  </div>
+</div>
+
+<script src="dashboard.js?v=202606130930"></script>
+<script async src="https://unpkg.com/lucide@latest" onload="window.lucide && window.lucide.createIcons && window.lucide.createIcons()" onerror="console.warn('Lucide icons unavailable')"></script>
+</body>
+</html>

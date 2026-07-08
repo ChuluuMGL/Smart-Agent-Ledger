@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "aliases": [
+    {
+      "canonical": "Smart Agent Ledger",
+      "match_names": ["Smart-Agent-Ledger", "Smart Agent Ledger"],
+      "path_contains": ["Smart Agent Ledger"],
+      "text_contains": []
+    },
+    {
+      "canonical": "Example Client/Website",
+      "match_names": ["Website", "example-website"],
+      "path_contains": ["Clients/Example Client/Website"],
+      "text_contains": ["Example Client"]
+    }
+  ]
+}

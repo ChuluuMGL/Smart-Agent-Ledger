@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-06-10",
+  "cny_to_usd": 0.14,
+  "notes": [
+    "单价单位：每百万 token (per million tokens)",
+    "currency 字段标识原始币种，CNY 模型会按 cny_to_usd 汇率转换为 USD",
+    "aliases 用于匹配模型名变体（大小写、下划线/连字符、版本号）",
+    "free=true 标记本地/免费模型",
+    "价格来源：各模型官方定价页，更新日期见 updated_at"
+  ],
+  "models": {
+    "deepseek-chat": {
+      "input_per_million": 0.27,
+      "output_per_million": 1.10,
+      "cache_read_per_million": 0.07,
+      "currency": "CNY",
+      "aliases": ["deepseek_chat", "DeepSeek-Chat", "deepseek-v3", "deepseek_v3"]
+    },
+    "deepseek-reasoner": {
+      "input_per_million": 0.55,
+      "output_per_million": 2.19,
+      "cache_read_per_million": 0.14,
+      "currency": "CNY",
+      "aliases": ["deepseek_reasoner", "DeepSeek-Reasoner", "deepseek-r1", "deepseek_r1"]
+    },
+    "glm-5": {
+      "input_per_million": 0.50,
+      "output_per_million": 0.50,
+      "currency": "CNY",
+      "aliases": ["glm5", "GLM-5", "glm-5.1", "glm_5", "glm-5-plus"]
+    },
+    "qwen-plus": {
+      "input_per_million": 0.80,
+      "output_per_million": 2.00,
+      "currency": "CNY",
+      "aliases": ["qwen_plus", "Qwen-Plus", "qwen3.6-plus", "qwen3.6_plus", "qwen3.5-plus"]
+    },
+    "codeqwen:7b": {
+      "input_per_million": 0,
+      "output_per_million": 0,
+      "currency": "USD",
+      "free": true,
+      "aliases": ["codeqwen", "CodeQwen", "ollama"]
+    },
+    "claude-sonnet-4-20250514": {
+      "input_per_million": 3.00,
+      "output_per_million": 15.00,
+      "cache_read_per_million": 0.30,
+      "currency": "USD",
+      "aliases": ["claude-sonnet-4", "claude-4-sonnet", "claude_sonnet_4", "claude-sonnet-4.5", "claude-4.5-sonnet"]
+    },
+    "claude-opus-4-20250514": {
+      "input_per_million": 15.00,
+      "output_per_million": 75.00,
+      "cache_read_per_million": 1.50,
+      "currency": "USD",
+      "aliases": ["claude-opus-4", "claude-4-opus", "claude_opus_4"]
+    },
+    "claude-haiku-4-5-20251001": {
+      "input_per_million": 0.80,
+      "output_per_million": 4.00,
+      "cache_read_per_million": 0.08,
+      "currency": "USD",
+      "aliases": ["claude-haiku-4.5", "claude-4.5-haiku", "claude_haiku_4_5", "claude-haiku-4-5"]
+    },
+    "gpt-4o": {
+      "input_per_million": 2.50,
+      "output_per_million": 10.00,
+      "cache_read_per_million": 1.25,
+      "currency": "USD",
+      "aliases": ["gpt4o", "gpt-4o-2024", "gpt_4o"]
+    },
+    "gpt-4.1": {
+      "input_per_million": 2.00,
+      "output_per_million": 8.00,
+      "cache_read_per_million": 0.50,
+      "currency": "USD",
+      "aliases": ["gpt4.1", "gpt-4-1", "gpt_4_1"]
+    },
+    "o3": {
+      "input_per_million": 2.00,
+      "output_per_million": 8.00,
+      "currency": "USD",
+      "aliases": ["o3-mini", "o3_mini"]
+    },
+    "codex-mini": {
+      "input_per_million": 1.50,
+      "output_per_million": 6.00,
+      "currency": "USD",
+      "aliases": ["codex-mini-latest", "codex_mini"]
+    },
+    "gemini-2.5-pro": {
+      "input_per_million": 1.25,
+      "output_per_million": 10.00,
+      "currency": "USD",
+      "aliases": ["gemini-2.5-pro", "gemini_2_5_pro", "gemini (estimated)"]
+    },
+    "minimax-m2.7": {
+      "input_per_million": 1.00,
+      "output_per_million": 4.00,
+      "currency": "CNY",
+      "aliases": ["MiniMax-M2.7", "minimax_m2_7", "minimax-m2.7", "m2.7", "minimax/m2.7"]
+    },
+    "minimax-m3": {
+      "input_per_million": 2.00,
+      "output_per_million": 8.00,
+      "currency": "CNY",
+      "aliases": ["MiniMax-M3", "minimax_m3", "minimax-m3"]
+    },
+    "gemini-3-pro": {
+      "input_per_million": 1.25,
+      "output_per_million": 10.00,
+      "currency": "USD",
+      "aliases": ["Gemini-3-Pro", "gemini_3_pro", "gemini3pro", "gemini-3-pro-preview"]
+    },
+    "gpt-5": {
+      "input_per_million": 2.00,
+      "output_per_million": 8.00,
+      "currency": "USD",
+      "aliases": ["GPT-5", "gpt5", "gpt_5", "gpt-5-medium"]
+    },
+    "gpt-5.3-codex": {
+      "input_per_million": 1.50,
+      "output_per_million": 6.00,
+      "currency": "USD",
+      "aliases": ["GPT-5.3-Codex", "gpt5.3-codex", "gpt_5_3_codex", "gpt-5-3-codex"]
+    },
+    "gpt-5.4": {
+      "input_per_million": 2.50,
+      "output_per_million": 10.00,
+      "currency": "USD",
+      "aliases": ["GPT-5.4", "gpt5.4", "gpt_5_4", "gpt-5-4"]
+    }
+  }
+}

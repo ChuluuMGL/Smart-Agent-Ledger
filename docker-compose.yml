@@ -1,0 +1,29 @@
+# =============================================================================
+# Smart Agent Ledger — local compose setup
+#
+# 用法:  docker compose up -d
+# Auth: set GATEWAY_API_KEY in .env or export it before starting.
+# Data: ./data persists config/logs/events; ./keys.env provides API keys.
+# =============================================================================
+services:
+  gateway:
+    build: .
+    image: smart-agent-ledger:latest
+    container_name: smart-agent-ledger
+    ports:
+      - "${SMART_AGENT_LEDGER_PORT:-8001}:8001"
+    volumes:
+      # Persist config, logs, and event ledgers.
+      - ./data:/app/data
+      # API keys, read-only. Can be empty for demo/local ledger use.
+      - ./keys.env:/app/keys.env:ro
+    environment:
+      # Endpoint auth key. Required before exposing beyond a trusted network.
+      - GATEWAY_API_KEY=${GATEWAY_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

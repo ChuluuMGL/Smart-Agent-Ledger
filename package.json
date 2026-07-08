@@ -1,0 +1,16 @@
+{
+  "name": "smart-agent-ledger-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "前端代码质量工具 (可选 — 本项目静态文件直接 serve, 不强制构建)",
+  "scripts": {
+    "lint": "eslint static/*.js",
+    "lint:fix": "eslint static/*.js --fix",
+    "format": "prettier --write \"static/**/*.{js,css,html}\"",
+    "format:check": "prettier --check \"static/**/*.{js,css,html}\""
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0"
+  }
+}
