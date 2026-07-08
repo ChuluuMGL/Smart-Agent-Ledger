@@ -120,7 +120,7 @@ def test_readme_includes_open_source_demo_quickstart_without_private_paths():
     readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
 
     assert "SMART_AGENT_LEDGER_DEMO_MODE=1" in readme
-    assert "402%20passing" in readme
+    assert "403%20passing" in readme
     assert "OPEN_SOURCE_READINESS.md" in readme
     assert pathlib.Path("OPEN_SOURCE_READINESS.md").is_file()
     assert "tests-371" not in readme
@@ -157,6 +157,16 @@ def test_dashboard_kpis_are_fleet_first_not_local_fallback():
     assert "label: t('fleet-health-token-total'" in js
     assert "const staleFleetNodeNames =" in js
     assert "kpi-fleet-stale-cache-detail" in js
+
+
+def test_dashboard_surfaces_data_trust_contract():
+    js = pathlib.Path("static/dashboard.js").read_text(encoding="utf-8")
+
+    assert "dataTrustStatusLabel" in js
+    assert "dataTrustOverview" in js
+    assert "data.data_trust || {}" in js
+    assert "data-trust-title" in js
+    assert "data-trust-overview" in js
 
 
 def test_dashboard_default_navigation_is_core_only():

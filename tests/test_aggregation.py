@@ -121,6 +121,11 @@ def test_build_agent_ledger_reports_token_breakdown(monkeypatch):
         "included_token_records": 2,
         "included_total_tokens": 1400,
     }
+    assert data["data_trust"]["scope"] == "local"
+    assert data["data_trust"]["status"] == "partial"
+    assert data["data_trust"]["score"] > 0
+    assert data["data_trust"]["included_token_records"] == 2
+    assert "includes_estimated_tokens" in data["data_trust"]["reasons"]
 
 
 # ── _aggregate_by 按 project ───────────────────────────────────────────────

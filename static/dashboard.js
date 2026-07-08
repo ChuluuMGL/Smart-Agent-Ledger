@@ -306,6 +306,17 @@
         'fleet-node-issue': '错误原因',
         'fleet-node-action': '处理建议',
         'fleet-node-stale-action': '优先安装只读账本服务，让主节点主动拉取；暂用 shared directory 时请恢复每小时导出或手动重新导出。',
+        'data-trust-title': '数据可信度',
+        'data-trust-complete': '完整',
+        'data-trust-partial': '部分可信',
+        'data-trust-unavailable': '不可用',
+        'data-trust-no-token': '无可靠 token',
+        'data-trust-no-data': '无数据',
+        'data-trust-not-configured': '未配置',
+        'data-trust-refreshing': '刷新中',
+        'data-trust-detail': '可信 token {included} 条 · 真实 {real} · 估算 {estimated} · 不可用 {unavailable}',
+        'data-trust-fleet-detail': '节点 {current}/{configured} 当前可信 · 过期 {stale} · 不可达 {unavailable}',
+        'data-trust-overview': '当前总量可信度 {score} 分：{status}。{detail}',
         'fleet-data-quality-real': '真实 token',
         'fleet-data-quality-activity-only': '仅活动',
         'fleet-data-quality-estimated': '估算',
@@ -656,6 +667,17 @@
         'fleet-node-issue': 'Issue',
         'fleet-node-action': 'Action',
         'fleet-node-stale-action': 'Prefer the read-only ledger service so the main node can pull data; if using shared directory, restore hourly export or export manually.',
+        'data-trust-title': 'Data Trust',
+        'data-trust-complete': 'Complete',
+        'data-trust-partial': 'Partial',
+        'data-trust-unavailable': 'Unavailable',
+        'data-trust-no-token': 'No reliable tokens',
+        'data-trust-no-data': 'No data',
+        'data-trust-not-configured': 'Not configured',
+        'data-trust-refreshing': 'Refreshing',
+        'data-trust-detail': '{included} trusted token logs · {real} real · {estimated} estimated · {unavailable} unavailable',
+        'data-trust-fleet-detail': '{current}/{configured} current trusted nodes · {stale} stale · {unavailable} unavailable',
+        'data-trust-overview': 'Current total trust score {score}: {status}. {detail}',
         'fleet-data-quality-real': 'Real tokens',
         'fleet-data-quality-activity-only': 'Activity only',
         'fleet-data-quality-estimated': 'Estimated',
@@ -937,6 +959,44 @@
         unavailable: t('fleet-data-quality-unavailable', '不可用')
       };
       return labels[quality] || quality || t('fleet-data-quality-unavailable', '不可用');
+    };
+    const dataTrustStatusLabel = status => {
+      const labels = {
+        complete: t('data-trust-complete', '完整'),
+        partial: t('data-trust-partial', '部分可信'),
+        stale: t('fleet-cache-stale', '使用上次成功同步'),
+        unavailable: t('data-trust-unavailable', '不可用'),
+        no_token_data: t('data-trust-no-token', '无可靠 token'),
+        no_data: t('data-trust-no-data', '无数据'),
+        not_configured: t('data-trust-not-configured', '未配置'),
+        refreshing: t('data-trust-refreshing', '刷新中')
+      };
+      return labels[status] || status || t('data-trust-unavailable', '不可用');
+    };
+    const dataTrustDetail = trust => {
+      if (!trust || typeof trust !== 'object') return '';
+      const tokenDetail = t('data-trust-detail', '可信 token {included} 条 · 真实 {real} · 估算 {estimated} · 不可用 {unavailable}')
+        .replace('{included}', fmtInt(trust.included_token_records || 0))
+        .replace('{real}', fmtInt(trust.real_token_records || 0))
+        .replace('{estimated}', fmtInt(trust.estimated_token_records || 0))
+        .replace('{unavailable}', fmtInt(trust.unavailable_token_records || 0));
+      if (trust.scope === 'fleet') {
+        return tokenDetail + ' · ' + t('data-trust-fleet-detail', '节点 {current}/{configured} 当前可信 · 过期 {stale} · 不可达 {unavailable}')
+          .replace('{current}', fmtInt(trust.current_data_nodes || 0))
+          .replace('{configured}', fmtInt(trust.configured_nodes || 0))
+          .replace('{stale}', fmtInt((trust.stale_nodes || []).length))
+          .replace('{unavailable}', fmtInt((trust.unavailable_nodes || []).length));
+      }
+      return tokenDetail;
+    };
+    const dataTrustOverview = trust => {
+      if (!trust || typeof trust !== 'object') return '';
+      const status = dataTrustStatusLabel(trust.status);
+      const score = fmtInt(trust.score || 0);
+      return t('data-trust-overview', '当前总量可信度 {score} 分：{status}。{detail}')
+        .replace('{score}', score)
+        .replace('{status}', status)
+        .replace('{detail}', dataTrustDetail(trust));
     };
     const unknownCostStatuses = new Set(['unknown', 'local_token_estimate_only', 'no_token_or_cost_in_cache', 'task_status_only', 'not_available', 'no_cost_source']);
     const unknownTokenStatuses = new Set(['unknown', 'not_available', 'status_only', 'pending_schema_mapping', 'server_side_only']);
@@ -1604,6 +1664,10 @@
         explain.push(t('missing-explain-antigravity', 'Antigravity 已安装，但目前只识别到 IDE 数据和日志；还没有映射出可靠的任务/token 账本表。'));
       }
       const fleetOnlyAgents = agentInventory.filter(row => row.fleet_only).map(row => row.agent);
+      const trustSource = (currentFleet() && currentFleet().data_trust) || ledger.data_trust;
+      if (trustSource) {
+        explain.push(dataTrustOverview(trustSource));
+      }
       if (fleetOnlyAgents.length) {
         explain.push(t('agent-fleet-activity-note', '来自团队节点活动记录；如果没有经过网关，不产生 token。') + ' ' + fleetOnlyAgents.join('、'));
       }
@@ -1957,10 +2021,20 @@
               .replace('{records}', fmtInt(excludedStaleTokenRecords))
           : '',
       ].filter(Boolean).join(' · ') || t('fleet-nodes-token', '团队节点 token');
+      const trust = data.data_trust || {};
+      const trustScore = Number(trust.score || 0);
+      const trustStatus = dataTrustStatusLabel(trust.status);
+      const trustDetail = dataTrustDetail(trust);
       document.getElementById('fleetSummary').innerHTML =
         '<h3>' + t('fleet-ops-title', '运行仪表盘') + '</h3>' +
         healthBanner +
         '<div class="dashboard-card-grid">' +
+          gaugeCard(
+            t('data-trust-title', '数据可信度'),
+            trustScore ? trustScore + ' · ' + trustStatus : trustStatus,
+            trustScore,
+            trustDetail
+          ) +
           gaugeCard(
             t('fleet-health-connected', '连接率'),
             Math.round(connectedPct) + '%',

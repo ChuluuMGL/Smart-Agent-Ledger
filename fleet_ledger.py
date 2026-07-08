@@ -361,6 +361,88 @@ def _token_breakdown_from_records(records: Iterable[Dict[str, Any]]) -> Dict[str
     return breakdown
 
 
+def _build_fleet_data_trust(
+    *,
+    nodes_configured: int,
+    connected_nodes: int,
+    current_data_nodes: int,
+    stale_nodes: List[str],
+    unavailable_nodes: List[str],
+    access_issues: List[Dict[str, Any]],
+    token_breakdown: Dict[str, int],
+    total_records: int,
+    excluded_stale_records: int,
+    excluded_stale_total_tokens: int,
+) -> Dict[str, Any]:
+    included_records = _safe_int(token_breakdown.get("included_token_records"))
+    real_records = _safe_int(token_breakdown.get("real_token_records"))
+    estimated_records = _safe_int(token_breakdown.get("estimated_token_records"))
+    unavailable_records = _safe_int(token_breakdown.get("unavailable_token_records"))
+    reasons: List[str] = []
+
+    if nodes_configured <= 0:
+        status = "not_configured"
+        reasons.append("no_team_nodes_configured")
+    elif current_data_nodes <= 0:
+        status = "unavailable"
+        reasons.append("no_current_team_node_data")
+    elif stale_nodes or unavailable_nodes or access_issues:
+        status = "partial"
+        if stale_nodes:
+            reasons.append("has_stale_nodes")
+        if unavailable_nodes:
+            reasons.append("has_unavailable_nodes")
+        if access_issues:
+            reasons.append("has_access_issues")
+    elif included_records <= 0:
+        status = "no_token_data"
+        reasons.append("no_reliable_token_records")
+    elif estimated_records > 0 or unavailable_records > 0:
+        status = "partial"
+        if estimated_records > 0:
+            reasons.append("includes_estimated_tokens")
+        if unavailable_records > 0:
+            reasons.append("some_records_without_tokens")
+    else:
+        status = "complete"
+
+    if nodes_configured <= 0:
+        score = 0
+    else:
+        node_score = (current_data_nodes / max(nodes_configured, 1)) * 45
+        token_score = (included_records / max(total_records, included_records, 1)) * 30 if total_records or included_records else 0
+        real_score = (real_records / max(included_records, 1)) * 20 if included_records else 0
+        freshness_score = 5 if not stale_nodes and not unavailable_nodes else 0
+        score = round(node_score + token_score + real_score + freshness_score)
+        if access_issues:
+            score = max(0, score - min(25, len(access_issues) * 5))
+        if status == "no_token_data":
+            score = min(score, 35)
+        if status == "unavailable":
+            score = min(score, 20)
+
+    return {
+        "scope": "fleet",
+        "status": status,
+        "score": max(0, min(100, score)),
+        "configured_nodes": nodes_configured,
+        "connected_nodes": connected_nodes,
+        "current_data_nodes": current_data_nodes,
+        "stale_nodes": stale_nodes,
+        "unavailable_nodes": unavailable_nodes,
+        "access_issue_count": len(access_issues),
+        "window_records": total_records,
+        "included_token_records": included_records,
+        "real_token_records": real_records,
+        "estimated_token_records": estimated_records,
+        "unavailable_token_records": unavailable_records,
+        "excluded_stale_records": excluded_stale_records,
+        "excluded_stale_total_tokens": excluded_stale_total_tokens,
+        "reasons": reasons,
+        "token_breakdown": token_breakdown,
+    }
+
+
 def _normalize_token_breakdown(summary: Dict[str, Any], records: List[Dict[str, Any]]) -> Dict[str, int]:
     raw = summary.get("token_breakdown")
     if isinstance(raw, dict):
@@ -1653,6 +1735,18 @@ async def build_fleet_ledger(
         "unavailable_nodes": unavailable_node_names,
         "excluded_nodes": sorted(set(stale_nodes + unavailable_node_names)),
     }
+    data_trust = _build_fleet_data_trust(
+        nodes_configured=len(nodes),
+        connected_nodes=connected_nodes,
+        current_data_nodes=len(current_data_nodes),
+        stale_nodes=stale_nodes,
+        unavailable_nodes=unavailable_node_names,
+        access_issues=access_issues,
+        token_breakdown=token_breakdown,
+        total_records=record_count,
+        excluded_stale_records=excluded_stale_records,
+        excluded_stale_total_tokens=excluded_stale_summary_total,
+    )
     return {
         "generated_at": _now().isoformat(),
         "window_days": days,
@@ -1704,6 +1798,7 @@ async def build_fleet_ledger(
             "unavailable_nodes": unavailable_nodes,
         },
         "node_health": node_health,
+        "data_trust": data_trust,
         "nodes": node_status,
         "agent_token_rank": _rank(rows, ["agent"]),
         "project_token_rank": _rank(rows, ["project"]),

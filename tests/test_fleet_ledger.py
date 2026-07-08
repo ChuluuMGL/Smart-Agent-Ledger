@@ -1499,6 +1499,11 @@ def test_build_fleet_ledger_marks_cached_http_node_as_degraded(tmp_path, monkeyp
     assert data["node_health"]["stale_node_count"] == 1
     assert data["node_health"]["stale_nodes"] == ["demo-laptop"]
     assert data["node_health"]["excluded_nodes"] == ["demo-laptop"]
+    assert data["data_trust"]["scope"] == "fleet"
+    assert data["data_trust"]["status"] == "partial"
+    assert data["data_trust"]["score"] < 100
+    assert data["data_trust"]["stale_nodes"] == ["demo-laptop"]
+    assert "has_stale_nodes" in data["data_trust"]["reasons"]
 
 
 def test_build_fleet_ledger_limits_cached_local_records_without_changing_summary(tmp_path, monkeypatch):

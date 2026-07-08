@@ -51,6 +51,63 @@ def _token_breakdown_from_records(rows: Iterable[Dict[str, Any]]) -> Dict[str, i
     return breakdown
 
 
+def _build_data_trust(
+    *,
+    rows: List[Dict[str, Any]],
+    token_breakdown: Dict[str, int],
+    access_issues: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    total_records = len(rows)
+    included_records = _safe_int(token_breakdown.get("included_token_records"))
+    real_records = _safe_int(token_breakdown.get("real_token_records"))
+    estimated_records = _safe_int(token_breakdown.get("estimated_token_records"))
+    unavailable_records = _safe_int(token_breakdown.get("unavailable_token_records"))
+    reasons: List[str] = []
+
+    if total_records <= 0:
+        status = "no_data"
+        reasons.append("no_records_in_window")
+    elif included_records <= 0:
+        status = "no_token_data"
+        reasons.append("no_reliable_token_records")
+    elif access_issues:
+        status = "partial"
+        reasons.append("collector_access_issues")
+    elif estimated_records > 0 or unavailable_records > 0:
+        status = "partial"
+        if estimated_records > 0:
+            reasons.append("includes_estimated_tokens")
+        if unavailable_records > 0:
+            reasons.append("some_records_without_tokens")
+    else:
+        status = "complete"
+
+    if total_records <= 0:
+        score = 0
+    else:
+        token_coverage = included_records / max(total_records, included_records, 1)
+        real_share = real_records / max(included_records, 1)
+        score = round((token_coverage * 70) + (real_share * 30))
+        if access_issues:
+            score = max(0, score - min(30, len(access_issues) * 10))
+        if status == "no_token_data":
+            score = min(score, 20)
+
+    return {
+        "scope": "local",
+        "status": status,
+        "score": max(0, min(100, score)),
+        "window_records": total_records,
+        "included_token_records": included_records,
+        "real_token_records": real_records,
+        "estimated_token_records": estimated_records,
+        "unavailable_token_records": unavailable_records,
+        "access_issue_count": len(access_issues),
+        "reasons": reasons,
+        "token_breakdown": token_breakdown,
+    }
+
+
 def _session_sort_key(row: Dict[str, Any]) -> float:
     return _epoch_from_iso(row.get("ended_at") or row.get("started_at")) or 0
 
@@ -447,6 +504,7 @@ def build_agent_ledger(days: int = 30, limit: int = 100) -> Dict[str, Any]:
             known_cost_sessions += 1
             known_cost += cost
     token_breakdown = _token_breakdown_from_records(rows)
+    data_trust = _build_data_trust(rows=rows, token_breakdown=token_breakdown, access_issues=access_issues)
     total_tokens = token_breakdown["included_total_tokens"]
     known_token_sessions = token_breakdown["included_token_records"]
     agent_rows = [row for row in rows if _is_agent_row(row)]
@@ -483,6 +541,7 @@ def build_agent_ledger(days: int = 30, limit: int = 100) -> Dict[str, Any]:
         "by_model": _aggregate_by(agent_rows, "model"),
         "agent_inventory": build_agent_inventory(rows),
         "recent_sessions": limited,
+        "data_trust": data_trust,
         "access_issues": access_issues,
         "notes": [
             "Codex token totals include input, cached input, output, and reasoning output from local token_count events.",
