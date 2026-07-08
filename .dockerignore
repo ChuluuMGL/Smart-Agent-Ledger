@@ -21,3 +21,5 @@ data/fleet-exports/
 data/*.log
 gateway.log
 data/gateway-app.log*
+data/gateway-stats.json
+data/feishu-reminder-state.json

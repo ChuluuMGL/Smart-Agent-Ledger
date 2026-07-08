@@ -2,7 +2,7 @@
   "name": "smart-agent-ledger-frontend",
   "version": "1.0.0",
   "private": true,
-  "description": "前端代码质量工具 (可选 — 本项目静态文件直接 serve, 不强制构建)",
+  "description": "Optional frontend quality tooling for the static dashboard.",
   "scripts": {
     "lint": "eslint static/*.js",
     "lint:fix": "eslint static/*.js --fix",

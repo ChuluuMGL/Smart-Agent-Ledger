@@ -1,0 +1,22 @@
+Smart Agent Ledger
+
+Copyright (c) 2026 Chuluu
+
+Created and maintained by Chuluu.
+
+GitHub publisher: ChuluuMGL
+Repository: https://github.com/ChuluuMGL/Smart-Agent-Ledger
+
+This project is distributed under the GNU Affero General Public License v3.0.
+See LICENSE for the full license text.
+
+Smart Agent Ledger is designed for local-first AI agent usage observability.
+It reads local usage logs, local databases, and optional trusted team-node
+collector endpoints. Do not publish real API keys, machine names, private IPs,
+ledger exports, customer data, or local log files in issues, examples, docs,
+or pull requests.
+
+Third-party names such as Codex, Claude Code, Cursor, Trae, Hermes, OpenClaw,
+LiteLLM, FastAPI, uvicorn, httpx, Feishu, and Lark belong to their respective
+owners. They are referenced only to describe compatibility or integration
+surfaces.

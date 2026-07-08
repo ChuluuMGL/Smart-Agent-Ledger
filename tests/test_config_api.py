@@ -120,7 +120,7 @@ def test_readme_includes_open_source_demo_quickstart_without_private_paths():
     readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
 
     assert "SMART_AGENT_LEDGER_DEMO_MODE=1" in readme
-    assert "400%2B" in readme
+    assert "402%20passing" in readme
     assert "OPEN_SOURCE_READINESS.md" in readme
     assert pathlib.Path("OPEN_SOURCE_READINESS.md").is_file()
     assert "tests-371" not in readme

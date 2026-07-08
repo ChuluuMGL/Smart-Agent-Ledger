@@ -336,13 +336,13 @@
         'fleet-rank-col-non-success': '非成功',
         'fleet-rank-col-latest': '最近',
         'hero-title': 'AI Agent 用量账本',
-        'hero-sub': '多 Agent · 智能路由 · 实时监控',
+        'hero-sub': '多 Agent · 本地账本 · 实时仪表盘',
         'agent-status-title': 'Agent 接入状态',
         'data-explain-title': '数据说明',
         'loading': '正在加载数据…',
         'unnamed-plan': '未命名计划',
         'feishu-receive-label': '接收方',
-        'title': 'Smart Agent Ledger | Real-time AI Agent Router Dashboard',
+        'title': 'Smart Agent Ledger | Local AI Agent Usage Dashboard',
         'routing-local-label': '\u672c\u5730\u4f18\u5148',
         'routing-coding-label': '\u4ee3\u7801\u751f\u6210',
         'routing-reason-label': '\u63a8\u7406\u5927\u6a21\u578b',
@@ -686,13 +686,13 @@
         'fleet-rank-col-non-success': 'Non-success',
         'fleet-rank-col-latest': 'Latest',
         'hero-title': 'AI Agent Usage Ledger',
-        'hero-sub': 'Multi-Agent · Smart Routing · Real-time Monitoring',
+        'hero-sub': 'Multi-Agent · Local Ledger · Real-time Dashboard',
         'agent-status-title': 'Agent Link Status',
         'data-explain-title': 'Data Legend',
         'loading': 'Loading data...',
         'unnamed-plan': 'Unnamed Plan',
         'feishu-receive-label': 'Receiver',
-        'title': 'Smart Agent Ledger | Real-time AI Agent Router Dashboard',
+        'title': 'Smart Agent Ledger | Local AI Agent Usage Dashboard',
         'routing-local-label': 'Local Hint',
         'routing-coding-label': 'Coding',
         'routing-reason-label': 'Reasoning',
@@ -733,7 +733,7 @@
       });
 
       // Update document title
-      document.title = t('title', 'Smart Agent Ledger | Real-time AI Agent Router Dashboard');
+      document.title = t('title', 'Smart Agent Ledger | Local AI Agent Usage Dashboard');
 
       // Update dynamic elements
       updateRefreshState();

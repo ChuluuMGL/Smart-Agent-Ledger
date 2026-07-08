@@ -1,14 +1,15 @@
 # Open Source Readiness
 
-This repository is currently optimized for private local use. Before publishing
-any public repository, use this checklist to keep private data, machine names,
-and internal deployment assumptions out of the release.
+This repository is the sanitized public edition of Smart Agent Ledger. Use this
+checklist before every public release to keep private data, machine names, and
+internal deployment assumptions out of the release.
 
 ## Current Target
 
-- Current private-product score: 75-80/100 after demo mode and Fleet stability work.
-- Current public-release score: about 70/100.
-- Public-release target: 80/100 after the checklist below is complete.
+- Current public-release score: about 80/100 after demo mode, README alignment,
+  screenshot, `NOTICE`, `TESTING.md`, and security cleanup.
+- Next target: 85/100 after one-command collector install, daily rollups, and a
+  short hosted walkthrough.
 
 ## Safe Public Positioning
 
@@ -56,5 +57,4 @@ These items are valuable but not required for the first public release:
 - One-command macOS collector installer with clearer status output.
 - Daily rollups for very large local ledgers.
 - Optional OpenTelemetry export.
-- Public screenshots generated from demo mode.
 - A short website or README animation showing the dashboard in demo mode.
