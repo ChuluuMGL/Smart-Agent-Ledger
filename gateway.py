@@ -677,6 +677,9 @@ FLEET_TASKS: Dict[tuple, asyncio.Task] = {}
 FLEET_STALE_IF_ERROR_SECONDS = 15 * 60
 FLEET_LOCAL_LEDGER_WAIT_SECONDS = 8.0
 FLEET_LOCAL_LEDGER_LIMIT = 1000
+with suppress(ValueError, TypeError):
+    _fleet_first_response_timeout = float(os.getenv("SMART_GATEWAY_FLEET_FIRST_RESPONSE_TIMEOUT_SECONDS", "3"))
+FLEET_FIRST_RESPONSE_TIMEOUT_SECONDS = max(0.1, locals().pop("_fleet_first_response_timeout", 3.0))
 
 
 def _parse_fleet_prefetch_windows(raw: str) -> tuple:
@@ -726,6 +729,23 @@ def _fleet_cache_is_usable(data: Dict[str, Any]) -> bool:
     return not data.get("_last_refresh_failed") and not _fleet_has_node_issue(data)
 
 
+def _fleet_cache_is_displayable(data: Dict[str, Any]) -> bool:
+    if not isinstance(data, dict) or data.get("_last_refresh_failed"):
+        return False
+    if _fleet_cache_is_usable(data):
+        return True
+    if _fleet_has_stale_export_issue(data):
+        return False
+    trust = data.get("data_trust")
+    if not isinstance(trust, dict):
+        return False
+    if trust.get("scope") != "fleet":
+        return False
+    if trust.get("status") not in {"partial", "no_token_data", "complete"}:
+        return False
+    return isinstance(data.get("totals"), dict) and isinstance(data.get("nodes"), list)
+
+
 def _fleet_disk_cache_path(days: int) -> pathlib.Path:
     safe_days = _bounded_int(days, 30, 1, 3660)
     return FLEET_DISK_CACHE_DIR / f"fleet-ledger-{safe_days}d.json"
@@ -733,7 +753,7 @@ def _fleet_disk_cache_path(days: int) -> pathlib.Path:
 
 def _cache_fleet_ledger_data(cache_key: tuple, data: Dict[str, Any]) -> None:
     FLEET_CACHE[cache_key] = {"ts": time.time(), "data": data}
-    if not _fleet_cache_is_usable(data):
+    if not _fleet_cache_is_displayable(data):
         return
     days = _bounded_int(data.get("window_days") or cache_key[0], cache_key[0], 1, 3660)
     with suppress(OSError):
@@ -772,7 +792,7 @@ def _latest_complete_fleet_cache(days: int, now: Optional[float] = None) -> Opti
 def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     now = time.time() if now is None else now
     exact = FLEET_CACHE.get((days, limit))
-    if exact and now - exact["ts"] < FLEET_STALE_IF_ERROR_SECONDS and _fleet_cache_is_usable(exact.get("data", {})):
+    if exact and now - exact["ts"] < FLEET_STALE_IF_ERROR_SECONDS and _fleet_cache_is_displayable(exact.get("data", {})):
         return {"ts": exact["ts"], "data": copy.deepcopy(exact["data"])}
 
     candidates = [
@@ -780,7 +800,7 @@ def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> O
         for key, value in FLEET_CACHE.items()
         if key[0] == days
         and now - value["ts"] < FLEET_STALE_IF_ERROR_SECONDS
-        and _fleet_cache_is_usable(value.get("data", {}))
+        and _fleet_cache_is_displayable(value.get("data", {}))
     ]
     if candidates:
         latest = max(candidates, key=lambda value: value["ts"])
@@ -795,7 +815,7 @@ def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> O
         return None
     if now - ts >= FLEET_STALE_IF_ERROR_SECONDS:
         return None
-    if not _fleet_cache_is_usable(data):
+    if not _fleet_cache_is_displayable(data):
         return None
     return {"ts": ts, "data": copy.deepcopy(data)}
 
@@ -803,12 +823,12 @@ def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> O
 def _fleet_has_fresh_cache(days: int, limit: int, now: Optional[float] = None) -> bool:
     now = time.time() if now is None else now
     cached = FLEET_CACHE.get((days, limit))
-    if cached and now - cached["ts"] < FLEET_CACHE_TTL_SECONDS and _fleet_cache_is_usable(cached.get("data", {})):
+    if cached and now - cached["ts"] < FLEET_CACHE_TTL_SECONDS and _fleet_cache_is_displayable(cached.get("data", {})):
         return True
     for key, value in FLEET_CACHE.items():
         if key[0] != days:
             continue
-        if now - value["ts"] < FLEET_CACHE_TTL_SECONDS and _fleet_cache_is_usable(value.get("data", {})):
+        if now - value["ts"] < FLEET_CACHE_TTL_SECONDS and _fleet_cache_is_displayable(value.get("data", {})):
             return True
     payload = safe_read_json(_fleet_disk_cache_path(days), default=None)
     if not isinstance(payload, dict):
@@ -818,7 +838,7 @@ def _fleet_has_fresh_cache(days: int, limit: int, now: Optional[float] = None) -
     return bool(
         isinstance(data, dict)
         and now - ts < FLEET_CACHE_TTL_SECONDS
-        and _fleet_cache_is_usable(data)
+        and _fleet_cache_is_displayable(data)
     )
 
 
@@ -962,6 +982,103 @@ def _demo_mode_enabled() -> bool:
         os.getenv("SMART_AGENT_LEDGER_DEMO_MODE", "").strip().lower() in enabled_values
         or os.getenv("SMART_GATEWAY_DEMO_MODE", "").strip().lower() in enabled_values
     )
+
+
+def _configured_fleet_nodes_for_placeholder() -> List[Dict[str, Any]]:
+    config = safe_read_json(_COMPANY_NODES_PATH, default={})
+    nodes = config.get("nodes") if isinstance(config, dict) else []
+    output = []
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("enabled") is False:
+            continue
+        name = str(node.get("name") or node.get("host") or node.get("base_url") or "unknown")
+        output.append({
+            "node": name,
+            "name": name,
+            "status": "refreshing",
+            "records": 0,
+            "data_quality": "unavailable",
+            "current_data_included": False,
+        })
+    return output
+
+
+def _empty_fleet_ledger(days: int, limit: int) -> Dict[str, Any]:
+    nodes = _configured_fleet_nodes_for_placeholder()
+    configured_nodes = len(nodes)
+    token_breakdown = {
+        "real_token_records": 0,
+        "real_total_tokens": 0,
+        "estimated_token_records": 0,
+        "estimated_total_tokens": 0,
+        "unavailable_token_records": 0,
+        "included_token_records": 0,
+        "included_total_tokens": 0,
+    }
+    return {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "window_days": days,
+        "totals": {
+            "records": 0,
+            "sessions": 0,
+            "agents": 0,
+            "projects": 0,
+            "activity_sessions": 0,
+            "total_tokens": 0,
+            "known_token_records": 0,
+            "known_cost_usd": 0.0,
+            "known_cost_sessions": 0,
+            "configured_nodes": configured_nodes,
+            "connected_nodes": 0,
+            "current_data_nodes": 0,
+            "active_sessions": 0,
+            "token_breakdown": token_breakdown,
+        },
+        "node_health": {
+            "status": "refreshing",
+            "complete": False,
+            "configured_nodes": configured_nodes,
+            "connected_nodes": 0,
+            "current_data_nodes": [],
+            "current_data_node_count": 0,
+            "stale_nodes": [],
+            "stale_node_count": 0,
+            "issue_count": 0,
+            "unavailable_nodes": [],
+            "excluded_nodes": [],
+        },
+        "data_trust": {
+            "scope": "fleet",
+            "status": "refreshing",
+            "score": 0,
+            "configured_nodes": configured_nodes,
+            "connected_nodes": 0,
+            "current_data_nodes": 0,
+            "stale_nodes": [],
+            "unavailable_nodes": [],
+            "access_issue_count": 0,
+            "window_records": 0,
+            "included_token_records": 0,
+            "real_token_records": 0,
+            "estimated_token_records": 0,
+            "unavailable_token_records": 0,
+            "excluded_stale_records": 0,
+            "excluded_stale_total_tokens": 0,
+            "reasons": ["background_refreshing"],
+            "token_breakdown": token_breakdown,
+        },
+        "nodes": nodes,
+        "agent_token_rank": [],
+        "agent_activity_rank": [],
+        "project_token_rank": [],
+        "project_activity_rank": [],
+        "activity_timeline": [],
+        "access_issues": [],
+        "notes": ["Fleet ledger is refreshing in the background; retry shortly for source-backed rows."],
+        "_requested_limit": limit,
+        "_refreshing": True,
+        "_stale": False,
+    }
 
 
 def _demo_ts(offset_days: int = 0) -> str:
@@ -2025,6 +2142,9 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
             if _fleet_cache_is_usable(data):
                 _schedule_fleet_prefetch_windows(days, limit)
                 return copy.deepcopy(data)
+            if _fleet_cache_is_displayable(data):
+                _schedule_fleet_prefetch_windows(days, limit)
+                return _decorate_partial_fleet_cache_response({"ts": now, "data": data}, now)
 
     stale_cache = _latest_fleet_cache(days=days, limit=limit, now=now)
     if stale_cache is not None:
@@ -2033,7 +2153,21 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
         _schedule_fleet_prefetch_windows(days, limit)
         return _decorate_stale_fleet_response(stale_cache, now)
 
-    data = await _build_fleet_ledger_response(days=days, limit=limit)
+    if task is None:
+        task = asyncio.create_task(_refresh_fleet_cache(cache_key, days, limit))
+        FLEET_TASKS[cache_key] = task
+    try:
+        data = await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=FLEET_FIRST_RESPONSE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return _empty_fleet_ledger(days, limit)
+    except Exception:
+        if task.done():
+            FLEET_TASKS.pop(cache_key, None)
+        raise
+
     has_node_issue = _fleet_has_node_issue(data)
     if has_node_issue and not _fleet_has_stale_export_issue(data):
         fallback_cache = _latest_complete_fleet_cache(days=days, now=now)
@@ -2051,6 +2185,8 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
         _schedule_fleet_prefetch_windows(days, limit)
     else:
         _cache_fleet_ledger_data(cache_key, data)
+        if _fleet_cache_is_displayable(data):
+            _schedule_fleet_prefetch_windows(days, limit)
     return data
 
 

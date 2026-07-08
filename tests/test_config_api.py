@@ -30,6 +30,7 @@ from gateway import (
     _get_agent_ledger_data,
     _latest_cached_agent_ledger_data,
     _latest_complete_fleet_cache,
+    _latest_fleet_cache,
 )
 
 
@@ -120,7 +121,7 @@ def test_readme_includes_open_source_demo_quickstart_without_private_paths():
     readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
 
     assert "SMART_AGENT_LEDGER_DEMO_MODE=1" in readme
-    assert "403%20passing" in readme
+    assert "407%20passing" in readme
     assert "OPEN_SOURCE_READINESS.md" in readme
     assert pathlib.Path("OPEN_SOURCE_READINESS.md").is_file()
     assert "tests-371" not in readme
@@ -429,6 +430,46 @@ def test_fleet_ledger_cold_build_returns_without_local_ready_leak(tmp_path, monk
     assert data["totals"]["total_tokens"] == 3000
 
 
+def test_fleet_ledger_cold_build_timeout_returns_refreshing_snapshot(tmp_path, monkeypatch):
+    import gateway
+
+    monkeypatch.setattr(gateway, "FLEET_DISK_CACHE_DIR", tmp_path / "fleet-cache")
+    monkeypatch.setattr(gateway, "FLEET_FIRST_RESPONSE_TIMEOUT_SECONDS", 0.1)
+    gateway.FLEET_CACHE.clear()
+    gateway.FLEET_TASKS.clear()
+
+    async def slow_build_response(days, limit):
+        await asyncio.sleep(60)
+        return {
+            "generated_at": "2026-07-08T04:00:00+00:00",
+            "window_days": days,
+            "nodes": [{"node": "demo-main", "status": "connected"}],
+            "access_issues": [],
+            "node_health": {"complete": True, "status": "complete"},
+            "data_trust": {"scope": "fleet", "status": "complete", "score": 100},
+            "totals": {"total_tokens": 3000},
+        }
+
+    monkeypatch.setattr(gateway, "_build_fleet_ledger_response", slow_build_response)
+
+    async def exercise():
+        try:
+            data = await gateway.fleet_ledger(days=30, limit=120)
+            await asyncio.sleep(0)
+            return data, set(gateway.FLEET_TASKS.keys())
+        finally:
+            for task in gateway.FLEET_TASKS.values():
+                task.cancel()
+            gateway.FLEET_TASKS.clear()
+            gateway.FLEET_CACHE.clear()
+
+    data, task_keys = asyncio.run(exercise())
+
+    assert data["_refreshing"] is True
+    assert data["data_trust"]["status"] == "refreshing"
+    assert (30, 120) in task_keys
+
+
 def test_fleet_ledger_prefetches_sibling_windows_after_cold_build(tmp_path, monkeypatch):
     import gateway
 
@@ -447,11 +488,19 @@ def test_fleet_ledger_prefetches_sibling_windows_after_cold_build(tmp_path, monk
             "totals": {"total_tokens": days},
         }
 
-    async def slow_prefetch(cache_key, days, limit):
-        await asyncio.sleep(60)
+    async def fake_refresh(cache_key, days, limit):
+        try:
+            if days == 30:
+                data = await fake_build_response(days, limit)
+                gateway._cache_fleet_ledger_data(cache_key, data)
+                return data
+            await asyncio.sleep(60)
+        finally:
+            if days == 30:
+                gateway.FLEET_TASKS.pop(cache_key, None)
 
     monkeypatch.setattr(gateway, "_build_fleet_ledger_response", fake_build_response)
-    monkeypatch.setattr(gateway, "_refresh_fleet_cache", slow_prefetch)
+    monkeypatch.setattr(gateway, "_refresh_fleet_cache", fake_refresh)
 
     async def exercise():
         try:
@@ -516,6 +565,144 @@ def test_fleet_ledger_reuses_fresh_partial_snapshot_without_refetch(tmp_path, mo
     assert second["node_health"]["status"] == "partial"
     assert second["_partial_cache"] is True
     assert second["_cache_age_seconds"] == 0
+
+
+def test_displayable_partial_fleet_cache_persists_to_disk(tmp_path, monkeypatch):
+    import gateway
+
+    monkeypatch.setattr(gateway, "FLEET_DISK_CACHE_DIR", tmp_path / "fleet-cache")
+    monkeypatch.setattr(gateway.time, "time", lambda: 1000)
+    gateway.FLEET_CACHE.clear()
+    partial = {
+        "generated_at": "2026-07-08T04:00:00+00:00",
+        "window_days": 30,
+        "nodes": [
+            {"node": "demo-main", "status": "connected"},
+            {"node": "demo-laptop", "status": "unreachable"},
+        ],
+        "access_issues": [{"node": "demo-laptop", "issue": "timeout"}],
+        "node_health": {"complete": False, "status": "partial"},
+        "data_trust": {"scope": "fleet", "status": "partial", "score": 70},
+        "totals": {"total_tokens": 700},
+    }
+
+    try:
+        _cache_fleet_ledger_data((30, 120), partial)
+        assert (tmp_path / "fleet-cache" / "fleet-ledger-30d.json").is_file()
+
+        gateway.FLEET_CACHE.clear()
+        fallback = _latest_fleet_cache(days=30, limit=120, now=1001)
+    finally:
+        gateway.FLEET_CACHE.clear()
+
+    assert fallback["data"]["totals"]["total_tokens"] == 700
+    assert fallback["data"]["data_trust"]["status"] == "partial"
+
+
+def test_fleet_ledger_returns_stale_partial_snapshot_after_ttl(tmp_path, monkeypatch):
+    import gateway
+
+    monkeypatch.setattr(gateway, "FLEET_DISK_CACHE_DIR", tmp_path / "fleet-cache")
+    monkeypatch.setattr(gateway.time, "time", lambda: 1000)
+    gateway.FLEET_CACHE.clear()
+    gateway.FLEET_TASKS.clear()
+    gateway.FLEET_CACHE[(30, 120)] = {
+        "ts": 900,
+        "data": {
+            "generated_at": "2026-07-08T04:00:00+00:00",
+            "window_days": 30,
+            "nodes": [
+                {"node": "demo-main", "status": "connected"},
+                {"node": "demo-laptop", "status": "unreachable"},
+            ],
+            "access_issues": [{"node": "demo-laptop", "issue": "timeout"}],
+            "node_health": {"complete": False, "status": "partial"},
+            "data_trust": {"scope": "fleet", "status": "partial", "score": 70},
+            "totals": {"total_tokens": 700},
+        },
+    }
+
+    async def fail_build_response(days, limit):
+        raise AssertionError("expired displayable partial cache should be returned before synchronous rebuild")
+
+    async def slow_refresh(cache_key, days, limit):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(gateway, "_build_fleet_ledger_response", fail_build_response)
+    monkeypatch.setattr(gateway, "_refresh_fleet_cache", slow_refresh)
+
+    async def exercise():
+        try:
+            data = await gateway.fleet_ledger(days=30, limit=120)
+            await asyncio.sleep(0)
+            return data, set(gateway.FLEET_TASKS.keys())
+        finally:
+            for task in gateway.FLEET_TASKS.values():
+                task.cancel()
+            gateway.FLEET_TASKS.clear()
+            gateway.FLEET_CACHE.clear()
+
+    data, task_keys = asyncio.run(exercise())
+
+    assert data["totals"]["total_tokens"] == 700
+    assert data["_stale"] is True
+    assert data["_refreshing"] is True
+    assert (30, 120) in task_keys
+
+
+def test_partial_cold_build_prefetches_sibling_windows(tmp_path, monkeypatch):
+    import gateway
+
+    monkeypatch.setattr(gateway, "FLEET_DISK_CACHE_DIR", tmp_path / "fleet-cache")
+    monkeypatch.setattr(gateway, "FLEET_PREFETCH_WINDOWS", (7, 30, 90), raising=False)
+    gateway.FLEET_CACHE.clear()
+    gateway.FLEET_TASKS.clear()
+
+    async def fake_build_response(days, limit):
+        return {
+            "generated_at": "2026-07-08T04:00:00+00:00",
+            "window_days": days,
+            "nodes": [
+                {"node": "demo-main", "status": "connected"},
+                {"node": "demo-laptop", "status": "unreachable"},
+            ],
+            "access_issues": [{"node": "demo-laptop", "issue": "timeout"}],
+            "node_health": {"complete": False, "status": "partial"},
+            "data_trust": {"scope": "fleet", "status": "partial", "score": 70},
+            "totals": {"total_tokens": days},
+        }
+
+    async def fake_refresh(cache_key, days, limit):
+        try:
+            if days == 30:
+                data = await fake_build_response(days, limit)
+                gateway._cache_fleet_ledger_data(cache_key, data)
+                return data
+            await asyncio.sleep(60)
+        finally:
+            if days == 30:
+                gateway.FLEET_TASKS.pop(cache_key, None)
+
+    monkeypatch.setattr(gateway, "_build_fleet_ledger_response", fake_build_response)
+    monkeypatch.setattr(gateway, "_refresh_fleet_cache", fake_refresh)
+
+    async def exercise():
+        try:
+            data = await gateway.fleet_ledger(days=30, limit=120)
+            await asyncio.sleep(0)
+            return data, set(gateway.FLEET_TASKS.keys())
+        finally:
+            for task in gateway.FLEET_TASKS.values():
+                task.cancel()
+            gateway.FLEET_TASKS.clear()
+            gateway.FLEET_CACHE.clear()
+
+    data, task_keys = asyncio.run(exercise())
+
+    assert data["totals"]["total_tokens"] == 30
+    assert (7, 120) in task_keys
+    assert (90, 120) in task_keys
+    assert (30, 120) not in task_keys
 
 
 def test_stale_export_issue_is_not_treated_as_usable_fleet_cache():

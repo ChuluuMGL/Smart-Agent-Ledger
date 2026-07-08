@@ -16,7 +16,7 @@ This matrix records what has been checked for `Smart Agent Ledger`. Keep it cons
 
 | Check | Status | Evidence |
 |---|---|---|
-| Python test suite | verified | `python -m pytest -q` returned `403 passed`. |
+| Python test suite | verified | `python -m pytest -q` returned `407 passed`. |
 | Dashboard JavaScript syntax | verified | `node --check static/dashboard.js` passed. |
 | Python module compile | verified | `python -m py_compile gateway.py fleet_ledger.py agent_ledger_server.py subscription_ledger.py` passed. |
 | Git whitespace check | verified | `git diff --check` passed before public push. |
