@@ -42,6 +42,14 @@ AGENT_LEDGER_FILE_CACHE_MAX_AGE_SECONDS = max(
     60,
     _safe_int(os.getenv("SMART_GATEWAY_AGENT_LEDGER_FILE_CACHE_MAX_AGE_SECONDS"), 24 * 60 * 60),
 )
+AGENT_LEDGER_FILE_CACHE_PRUNE_MAX_FILES = max(
+    10,
+    _safe_int(os.getenv("SMART_GATEWAY_AGENT_LEDGER_FILE_CACHE_PRUNE_MAX_FILES"), 160),
+)
+AGENT_LEDGER_FILE_CACHE_PRUNE_AGE_SECONDS = max(
+    60 * 60,
+    _safe_int(os.getenv("SMART_GATEWAY_AGENT_LEDGER_FILE_CACHE_PRUNE_AGE_SECONDS"), 14 * 24 * 60 * 60),
+)
 AGENT_LEDGER_FILE_EXPORT_MAX_AGE_SECONDS = max(
     60,
     _safe_int(os.getenv("SMART_GATEWAY_AGENT_LEDGER_FILE_EXPORT_MAX_AGE_SECONDS"), 36 * 60 * 60),
@@ -302,7 +310,7 @@ def _remote_node_issue(node: Dict[str, Any], name: Any, attempted_urls: List[str
     url_text = "、".join(attempted_urls) if attempted_urls else "未生成可用地址"
     return (
         f"{label} 不可达：已尝试 {url_text}。"
-        "请确认两台机器在同一 Wi-Fi、只读账本服务 8002 正在运行，"
+        "请确认该机器已开机、Tailscale 在线、只读账本服务 8002 正在运行，"
         "或更新 data/company-agent-nodes.json 的 base_url/base_url_candidates。"
         f"最后错误：{last_error}"
     )
@@ -725,6 +733,71 @@ def _annotate_node_data_quality(status_row: Dict[str, Any]) -> Dict[str, Any]:
     status_row["data_quality"] = "unavailable"
     status_row["token_included"] = False
     return status_row
+
+
+def _annotate_node_diagnostics(status_row: Dict[str, Any]) -> Dict[str, Any]:
+    status = str(status_row.get("status") or "").lower()
+    source_type = str(status_row.get("source_type") or "").lower()
+    data_quality = str(status_row.get("data_quality") or "").lower()
+    issue = str(status_row.get("issue") or status_row.get("ledger_cache_issue") or "")
+    attempted_urls = status_row.get("attempted_urls") or []
+    attempted_text = "、".join(str(url) for url in attempted_urls if url)
+
+    if status in {"unreachable", "error"}:
+        status_row["health_status"] = "error"
+        status_row["health_reason"] = "unreachable"
+        status_row["next_action"] = (
+            "确认该节点已开机、Tailscale 在线、8002 只读账本服务正在运行；"
+            "然后在主节点用 curl 检查 /health。"
+            + (f" 已尝试：{attempted_text}" if attempted_text else "")
+        )
+    elif status == "missing_url":
+        status_row["health_status"] = "error"
+        status_row["health_reason"] = "missing_url"
+        status_row["next_action"] = "在团队节点配置中补齐 base_url 或 ledger_url；推荐使用 Tailscale 100.x 地址。"
+    elif status == "refreshing":
+        status_row["health_status"] = "info"
+        status_row["health_reason"] = "background_refreshing"
+        status_row["next_action"] = "团队节点正在后台刷新；稍后会自动替换为最新快照，不会用本机临时数据冒充总量。"
+    elif status_row.get("export_stale"):
+        status_row["health_status"] = "warn"
+        status_row["health_reason"] = "stale_export"
+        status_row["next_action"] = "导出文件已过期；恢复该机器的定时导出，或改用 8002 只读账本服务主动拉取。"
+    elif status_row.get("stale_ledger_cache"):
+        status_row["health_status"] = "warn"
+        status_row["health_reason"] = "stale_cache"
+        status_row["next_action"] = "当前使用该节点上次成功同步；确认节点在线、Tailscale 正常、8002 /health 可访问。"
+    elif source_type in ACTIVITY_ONLY_SOURCE_TYPES or data_quality == "activity_only":
+        status_row["health_status"] = "info"
+        status_row["health_reason"] = "activity_only"
+        status_row["next_action"] = "该节点只提供活动次数，不提供 token；如需 token，请让 LLM 调用经过网关或接入账本服务。"
+    elif status == "connected" and data_quality in {"real", "estimated"}:
+        status_row["health_status"] = "ok"
+        status_row["health_reason"] = "current"
+        status_row["next_action"] = "当前节点已计入团队统计。"
+    elif status == "connected":
+        status_row["health_status"] = "warn"
+        status_row["health_reason"] = "no_token_data"
+        status_row["next_action"] = "节点已连接，但暂无可靠 token；确认采集器是否能读取本机 Agent 账本。"
+    else:
+        status_row["health_status"] = "info"
+        status_row["health_reason"] = status or "unknown"
+        status_row["next_action"] = issue or "等待下一次刷新。"
+
+    return status_row
+
+
+def normalize_node_diagnostics(status_row: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(status_row, dict):
+        return status_row
+    row = dict(status_row)
+    if (
+        "data_quality" not in row
+        or "token_included" not in row
+        or "current_data_included" not in row
+    ):
+        row = _annotate_node_data_quality(row)
+    return _annotate_node_diagnostics(row)
 
 
 def _run_n8n_ssh_query(node: Dict[str, Any], days: int, limit: int, timeout_seconds: float) -> Dict[str, Any]:
@@ -1198,6 +1271,47 @@ def _agent_ledger_file_cache_path(ledger_path: pathlib.Path) -> pathlib.Path:
     return AGENT_LEDGER_FILE_CACHE_DIR / f"{digest}.json"
 
 
+def _prune_agent_ledger_file_cache(
+    *,
+    max_files: Optional[int] = None,
+    max_age_seconds: Optional[int] = None,
+    now: Optional[float] = None,
+) -> int:
+    cache_dir = AGENT_LEDGER_FILE_CACHE_DIR
+    if not cache_dir.is_dir():
+        return 0
+    max_files = AGENT_LEDGER_FILE_CACHE_PRUNE_MAX_FILES if max_files is None else max(0, int(max_files))
+    max_age_seconds = (
+        AGENT_LEDGER_FILE_CACHE_PRUNE_AGE_SECONDS
+        if max_age_seconds is None
+        else max(0, int(max_age_seconds))
+    )
+    now = _now().timestamp() if now is None else float(now)
+    kept: List[Tuple[float, pathlib.Path]] = []
+    removed = 0
+
+    for path in cache_dir.glob("*.json"):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        age_seconds = max(0, now - stat.st_mtime)
+        if max_age_seconds > 0 and age_seconds > max_age_seconds:
+            with suppress(OSError):
+                path.unlink()
+                removed += 1
+            continue
+        kept.append((stat.st_mtime, path))
+
+    if max_files > 0 and len(kept) > max_files:
+        overflow = len(kept) - max_files
+        for _, path in sorted(kept, key=lambda item: item[0])[:overflow]:
+            with suppress(OSError):
+                path.unlink()
+                removed += 1
+    return removed
+
+
 def _cache_agent_ledger_file_data(ledger_path: pathlib.Path, data: Dict[str, Any]) -> None:
     cache_path = _agent_ledger_file_cache_path(ledger_path)
     payload = {
@@ -1210,6 +1324,7 @@ def _cache_agent_ledger_file_data(ledger_path: pathlib.Path, data: Dict[str, Any
         tmp = cache_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         tmp.replace(cache_path)
+        _prune_agent_ledger_file_cache()
 
 
 def _load_cached_agent_ledger_file_data(ledger_path: pathlib.Path) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
@@ -1249,6 +1364,7 @@ def _cache_remote_agent_ledger_data(node: Dict[str, Any], urls: List[str], resol
         tmp = cache_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         tmp.replace(cache_path)
+        _prune_agent_ledger_file_cache()
 
 
 def _load_cached_remote_agent_ledger_data(node: Dict[str, Any], urls: List[str]) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
@@ -1550,7 +1666,7 @@ async def build_fleet_ledger(
             if isinstance(result, Exception):
                 issue = str(result)
                 status_row = _add_node_dashboard_metrics({"node": name, "status": "error", "records": 0}, [], issue)
-                node_status.append(_annotate_node_data_quality(status_row))
+                node_status.append(_annotate_node_diagnostics(_annotate_node_data_quality(status_row)))
                 access_issues.append({"node": name, "issue": issue})
                 continue
             n, status, records, issue, meta = result
@@ -1563,6 +1679,7 @@ async def build_fleet_ledger(
                 })
             status_row = _add_node_dashboard_metrics(status_row, records, issue)
             status_row = _annotate_node_data_quality(status_row)
+            status_row = _annotate_node_diagnostics(status_row)
             node_status.append(status_row)
             current_data_included = bool(status_row.get("current_data_included"))
             if issue:

@@ -2096,6 +2096,7 @@
             dataQualityLabel(row.data_quality),
             row.stale_ledger_cache ? t('fleet-cache-stale', '使用上次成功同步') : '',
             row.export_stale ? t('fleet-export-stale', '导出已过期') : '',
+            row.health_reason || '',
             currentIncluded ? '' : t('fleet-node-excluded-current', '未计入当前总量'),
             cacheAge,
             (row.records !== undefined ? t('fleet-rank-col-records', '记录') + ' ' + fmtInt(row.records || 0) : ''),
@@ -2105,7 +2106,7 @@
           if (row.issue) {
             issueParts.push('<strong>' + esc(t('fleet-node-issue', '错误原因')) + '</strong><span>' + esc(row.issue) + '</span>');
           }
-          const operatorHint = row.operator_hint || (row.export_stale ? t('fleet-node-stale-action', '优先安装只读账本服务，让主节点主动拉取；暂用 shared directory 时请恢复每小时导出或手动重新导出。') : '');
+          const operatorHint = row.next_action || row.operator_hint || (row.export_stale ? t('fleet-node-stale-action', '优先安装只读账本服务，让主节点主动拉取；暂用 shared directory 时请恢复每小时导出或手动重新导出。') : '');
           if (operatorHint) {
             issueParts.push('<strong>' + esc(t('fleet-node-action', '处理建议')) + '</strong><span>' + esc(operatorHint) + '</span>');
           }

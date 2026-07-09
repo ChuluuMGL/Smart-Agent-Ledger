@@ -2,6 +2,7 @@
 import asyncio
 import datetime as dt
 import json
+import os
 import pathlib
 import httpx
 import pytest
@@ -1203,7 +1204,8 @@ def test_fetch_remote_gateway_node_reports_actionable_http_issue(tmp_path, monke
     assert status == "unreachable"
     assert records == []
     assert "collector laptop" in issue
-    assert "同一 Wi-Fi" in issue
+    assert "Tailscale 在线" in issue
+    assert "同一 Wi-Fi" not in issue
     assert "8002" in issue
     assert meta["attempted_urls"] == [
         "http://192.0.2.63:8002/agent-ledger?days=90&limit=120",
@@ -1353,6 +1355,27 @@ def test_fetch_remote_gateway_node_uses_fresh_http_cache_without_network(tmp_pat
     assert meta["stale_ledger_cache"] is False
 
 
+def test_agent_ledger_file_cache_prune_removes_oldest_files(tmp_path, monkeypatch):
+    import fleet_ledger
+
+    monkeypatch.setattr(fleet_ledger, "AGENT_LEDGER_FILE_CACHE_DIR", tmp_path)
+    old_file = tmp_path / "old.json"
+    middle_file = tmp_path / "middle.json"
+    new_file = tmp_path / "new.json"
+    for path in (old_file, middle_file, new_file):
+        path.write_text("{}", encoding="utf-8")
+    os.utime(old_file, (100, 100))
+    os.utime(middle_file, (200, 200))
+    os.utime(new_file, (300, 300))
+
+    removed = fleet_ledger._prune_agent_ledger_file_cache(max_files=2, now=400)
+
+    assert removed == 1
+    assert not old_file.exists()
+    assert middle_file.exists()
+    assert new_file.exists()
+
+
 def test_fetch_remote_gateway_node_cache_is_scoped_by_window_url(tmp_path, monkeypatch):
     import fleet_ledger
 
@@ -1441,6 +1464,9 @@ def test_build_fleet_ledger_reports_partial_node_health(tmp_path, monkeypatch):
     assert data["node_health"]["status"] == "partial"
     assert data["node_health"]["complete"] is False
     assert data["node_health"]["unavailable_nodes"] == ["company-main"]
+    assert data["nodes"][1]["health_status"] == "error"
+    assert data["nodes"][1]["health_reason"] == "unreachable"
+    assert "8002" in data["nodes"][1]["next_action"]
 
 
 def test_build_fleet_ledger_marks_cached_http_node_as_degraded(tmp_path, monkeypatch):
@@ -1479,6 +1505,7 @@ def test_build_fleet_ledger_marks_cached_http_node_as_degraded(tmp_path, monkeyp
                 "stale_ledger_cache": True,
                 "ledger_cache_status": "stale_http",
                 "ledger_cache_age_seconds": 7200,
+                "operator_hint": "旧缓存提示：请确认两台机器在同一 Wi-Fi。",
             },
         )
 
@@ -1493,6 +1520,10 @@ def test_build_fleet_ledger_marks_cached_http_node_as_degraded(tmp_path, monkeyp
     assert data["totals"]["node_issue_count"] == 1
     assert data["nodes"][0]["current_data_included"] is True
     assert data["nodes"][0]["stale_ledger_cache"] is True
+    assert data["nodes"][0]["health_status"] == "warn"
+    assert data["nodes"][0]["health_reason"] == "stale_cache"
+    assert "上次成功同步" in data["nodes"][0]["next_action"]
+    assert "同一 Wi-Fi" not in data["nodes"][0]["next_action"]
     assert data["node_health"]["status"] == "partial"
     assert data["node_health"]["complete"] is False
     assert data["node_health"]["current_data_node_count"] == 1

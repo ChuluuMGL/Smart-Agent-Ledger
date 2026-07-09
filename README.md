@@ -11,7 +11,7 @@
 [![Local First](https://img.shields.io/badge/local--first-agent--ledger-0E5E43)](#why-this-exists)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](./pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688)](https://fastapi.tiangolo.com/)
-[![Tests](https://img.shields.io/badge/tests-407%20passing-green)](./TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-411%20passing-green)](./TESTING.md)
 [![License: AGPL](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 [![Security](https://img.shields.io/badge/security-local--network-orange)](./SECURITY.md)
 
@@ -201,7 +201,7 @@ git diff --check
 Current public release check:
 
 ```text
-407 passed
+411 passed
 ```
 
 See [`TESTING.md`](./TESTING.md) for the test matrix and recommended smoke tests.

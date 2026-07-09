@@ -121,7 +121,7 @@ def test_readme_includes_open_source_demo_quickstart_without_private_paths():
     readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
 
     assert "SMART_AGENT_LEDGER_DEMO_MODE=1" in readme
-    assert "407%20passing" in readme
+    assert "411%20passing" in readme
     assert "OPEN_SOURCE_READINESS.md" in readme
     assert pathlib.Path("OPEN_SOURCE_READINESS.md").is_file()
     assert "tests-371" not in readme
@@ -168,6 +168,13 @@ def test_dashboard_surfaces_data_trust_contract():
     assert "data.data_trust || {}" in js
     assert "data-trust-title" in js
     assert "data-trust-overview" in js
+
+
+def test_dashboard_prefers_structured_node_next_action():
+    js = pathlib.Path("static/dashboard.js").read_text(encoding="utf-8")
+
+    assert "row.next_action || row.operator_hint" in js
+    assert "row.health_reason" in js
 
 
 def test_dashboard_default_navigation_is_core_only():
@@ -468,6 +475,65 @@ def test_fleet_ledger_cold_build_timeout_returns_refreshing_snapshot(tmp_path, m
     assert data["_refreshing"] is True
     assert data["data_trust"]["status"] == "refreshing"
     assert (30, 120) in task_keys
+
+
+def test_fleet_refreshing_placeholder_nodes_have_next_action(tmp_path, monkeypatch):
+    import gateway
+
+    nodes_path = tmp_path / "company-agent-nodes.json"
+    nodes_path.write_text(
+        json.dumps({"nodes": [{"name": "demo-laptop"}, {"name": "disabled-demo", "enabled": False}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gateway, "_COMPANY_NODES_PATH", nodes_path)
+
+    data = gateway._empty_fleet_ledger(days=30, limit=120)
+
+    assert data["nodes"][0]["health_status"] == "info"
+    assert data["nodes"][0]["health_reason"] == "background_refreshing"
+    assert "后台刷新" in data["nodes"][0]["next_action"]
+    assert len(data["nodes"]) == 1
+
+
+def test_fleet_cached_snapshot_normalizes_node_next_action(tmp_path, monkeypatch):
+    import gateway
+
+    monkeypatch.setattr(gateway, "FLEET_DISK_CACHE_DIR", tmp_path / "fleet-cache")
+    gateway.FLEET_CACHE.clear()
+    gateway.FLEET_TASKS.clear()
+    gateway.FLEET_CACHE[(30, 120)] = {
+        "ts": gateway.time.time(),
+        "data": {
+            "generated_at": "2026-07-09T04:00:00+00:00",
+            "window_days": 30,
+            "totals": {"total_tokens": 1000},
+            "nodes": [
+                {
+                    "node": "demo-laptop",
+                    "status": "unreachable",
+                    "source_type": "smart_gateway",
+                    "data_quality": "unavailable",
+                    "current_data_included": False,
+                    "attempted_urls": ["http://100.64.0.9:8002/agent-ledger?days=30&limit=120"],
+                    "issue": "旧缓存提示：请确认两台机器在同一 Wi-Fi。",
+                    "next_action": "旧缓存提示：请确认两台机器在同一 Wi-Fi。",
+                }
+            ],
+            "access_issues": [{"node": "demo-laptop", "issue": "timeout"}],
+            "node_health": {"status": "partial", "complete": False},
+            "data_trust": {"scope": "fleet", "status": "partial", "score": 30},
+        },
+    }
+
+    try:
+        data = asyncio.run(gateway.fleet_ledger(days=30, limit=120))
+    finally:
+        gateway.FLEET_CACHE.clear()
+        gateway.FLEET_TASKS.clear()
+
+    action = data["nodes"][0]["next_action"]
+    assert "Tailscale 在线" in action
+    assert "同一 Wi-Fi" not in action
 
 
 def test_fleet_ledger_prefetches_sibling_windows_after_cold_build(tmp_path, monkeypatch):

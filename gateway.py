@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse, JSONRes
 import httpx
 from agent_ledger import build_agent_ledger, collect_sessions, query_sessions, record_gateway_event
 from utils import safe_read_json, load_env_file, mtime_cached
-from fleet_ledger import build_fleet_ledger, register_node, remove_node
+from fleet_ledger import build_fleet_ledger, normalize_node_diagnostics, register_node, remove_node
 from feishu_notifier import CONFIG_PATH as FEISHU_CONFIG_PATH, build_alert_text, build_configured_alerts, build_reminder_windows, load_config as load_feishu_config, missing_send_fields, send_configured_alert
 from subscription_ledger import build_subscription_ledger, choose_provider_for_route
 from usage_report import write_monthly_usage_report
@@ -746,20 +746,34 @@ def _fleet_cache_is_displayable(data: Dict[str, Any]) -> bool:
     return isinstance(data.get("totals"), dict) and isinstance(data.get("nodes"), list)
 
 
+def _normalize_fleet_response_for_display(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        return data
+    output = copy.deepcopy(data)
+    nodes = output.get("nodes")
+    if isinstance(nodes, list):
+        output["nodes"] = [
+            normalize_node_diagnostics(node) if isinstance(node, dict) else node
+            for node in nodes
+        ]
+    return output
+
+
 def _fleet_disk_cache_path(days: int) -> pathlib.Path:
     safe_days = _bounded_int(days, 30, 1, 3660)
     return FLEET_DISK_CACHE_DIR / f"fleet-ledger-{safe_days}d.json"
 
 
 def _cache_fleet_ledger_data(cache_key: tuple, data: Dict[str, Any]) -> None:
-    FLEET_CACHE[cache_key] = {"ts": time.time(), "data": data}
-    if not _fleet_cache_is_displayable(data):
+    display_data = _normalize_fleet_response_for_display(data)
+    FLEET_CACHE[cache_key] = {"ts": time.time(), "data": display_data}
+    if not _fleet_cache_is_displayable(display_data):
         return
-    days = _bounded_int(data.get("window_days") or cache_key[0], cache_key[0], 1, 3660)
+    days = _bounded_int(display_data.get("window_days") or cache_key[0], cache_key[0], 1, 3660)
     with suppress(OSError):
         FLEET_DISK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with _fleet_disk_cache_path(days).open("w", encoding="utf-8") as f:
-            json.dump({"ts": time.time(), "data": data}, f, ensure_ascii=False)
+            json.dump({"ts": time.time(), "data": display_data}, f, ensure_ascii=False)
 
 
 def _latest_complete_fleet_cache(days: int, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
@@ -773,7 +787,7 @@ def _latest_complete_fleet_cache(days: int, now: Optional[float] = None) -> Opti
     ]
     if candidates:
         latest = max(candidates, key=lambda value: value["ts"])
-        return {"ts": latest["ts"], "data": copy.deepcopy(latest["data"])}
+        return {"ts": latest["ts"], "data": _normalize_fleet_response_for_display(latest["data"])}
 
     payload = safe_read_json(_fleet_disk_cache_path(days), default=None)
     if not isinstance(payload, dict):
@@ -786,14 +800,14 @@ def _latest_complete_fleet_cache(days: int, now: Optional[float] = None) -> Opti
         return None
     if not _fleet_cache_is_usable(data):
         return None
-    return {"ts": ts, "data": copy.deepcopy(data)}
+    return {"ts": ts, "data": _normalize_fleet_response_for_display(data)}
 
 
 def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     now = time.time() if now is None else now
     exact = FLEET_CACHE.get((days, limit))
     if exact and now - exact["ts"] < FLEET_STALE_IF_ERROR_SECONDS and _fleet_cache_is_displayable(exact.get("data", {})):
-        return {"ts": exact["ts"], "data": copy.deepcopy(exact["data"])}
+        return {"ts": exact["ts"], "data": _normalize_fleet_response_for_display(exact["data"])}
 
     candidates = [
         value
@@ -804,7 +818,7 @@ def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> O
     ]
     if candidates:
         latest = max(candidates, key=lambda value: value["ts"])
-        return {"ts": latest["ts"], "data": copy.deepcopy(latest["data"])}
+        return {"ts": latest["ts"], "data": _normalize_fleet_response_for_display(latest["data"])}
 
     payload = safe_read_json(_fleet_disk_cache_path(days), default=None)
     if not isinstance(payload, dict):
@@ -817,7 +831,7 @@ def _latest_fleet_cache(days: int, limit: int, now: Optional[float] = None) -> O
         return None
     if not _fleet_cache_is_displayable(data):
         return None
-    return {"ts": ts, "data": copy.deepcopy(data)}
+    return {"ts": ts, "data": _normalize_fleet_response_for_display(data)}
 
 
 def _fleet_has_fresh_cache(days: int, limit: int, now: Optional[float] = None) -> bool:
@@ -863,7 +877,7 @@ def _schedule_fleet_prefetch_windows(days: int, limit: int) -> None:
 
 
 def _decorate_stale_fleet_response(entry: Dict[str, Any], now: float) -> Dict[str, Any]:
-    data = copy.deepcopy(entry["data"])
+    data = _normalize_fleet_response_for_display(entry["data"])
     data["_stale_cache_age_seconds"] = max(0, int(now - entry["ts"]))
     data["_stale"] = True
     data["_refreshing"] = True
@@ -871,7 +885,7 @@ def _decorate_stale_fleet_response(entry: Dict[str, Any], now: float) -> Dict[st
 
 
 def _decorate_partial_fleet_cache_response(entry: Dict[str, Any], now: float) -> Dict[str, Any]:
-    data = copy.deepcopy(entry["data"])
+    data = _normalize_fleet_response_for_display(entry["data"])
     data["_partial_cache"] = True
     data["_cache_age_seconds"] = max(0, int(now - entry["ts"]))
     return data
@@ -999,6 +1013,9 @@ def _configured_fleet_nodes_for_placeholder() -> List[Dict[str, Any]]:
             "records": 0,
             "data_quality": "unavailable",
             "current_data_included": False,
+            "health_status": "info",
+            "health_reason": "background_refreshing",
+            "next_action": "团队节点正在后台刷新；稍后会自动替换为最新快照，不会用本机临时数据冒充总量。",
         })
     return output
 
@@ -2130,7 +2147,7 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
     if cached and now - cached["ts"] < FLEET_CACHE_TTL_SECONDS:
         if _fleet_cache_is_usable(cached.get("data", {})):
             _schedule_fleet_prefetch_windows(days, limit)
-            return copy.deepcopy(cached["data"])
+            return _normalize_fleet_response_for_display(cached["data"])
         if not cached.get("data", {}).get("_last_refresh_failed"):
             return _decorate_partial_fleet_cache_response(cached, now)
 
@@ -2141,7 +2158,7 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
             data = task.result()
             if _fleet_cache_is_usable(data):
                 _schedule_fleet_prefetch_windows(days, limit)
-                return copy.deepcopy(data)
+                return _normalize_fleet_response_for_display(data)
             if _fleet_cache_is_displayable(data):
                 _schedule_fleet_prefetch_windows(days, limit)
                 return _decorate_partial_fleet_cache_response({"ts": now, "data": data}, now)
@@ -2179,7 +2196,7 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
             stale["_last_refresh_failed"] = True
             stale["latest_access_issues"] = data.get("access_issues") or []
             stale["latest_partial_totals"] = data.get("totals") or {}
-            return stale
+            return _normalize_fleet_response_for_display(stale)
     if not has_node_issue:
         _cache_fleet_ledger_data(cache_key, data)
         _schedule_fleet_prefetch_windows(days, limit)
@@ -2187,7 +2204,7 @@ async def fleet_ledger(days: int = 30, limit: int = 100):
         _cache_fleet_ledger_data(cache_key, data)
         if _fleet_cache_is_displayable(data):
             _schedule_fleet_prefetch_windows(days, limit)
-    return data
+    return _normalize_fleet_response_for_display(data)
 
 
 @app.post("/reports/monthly-usage")
