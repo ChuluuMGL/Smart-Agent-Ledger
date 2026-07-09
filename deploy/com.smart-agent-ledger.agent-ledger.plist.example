@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.smart-agent-ledger.agent-ledger</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>PROJECT_DIR="__PROJECT_DIR__"; cd "$PROJECT_DIR" &amp;&amp; exec "__PYTHON_BIN__" -m uvicorn agent_ledger_server:app --host 0.0.0.0 --port 8002 --no-access-log</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUTF8</key>
+        <string>1</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/smart-agent-ledger/agent-ledger.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/smart-agent-ledger/agent-ledger.log</string>
+</dict>
+</plist>

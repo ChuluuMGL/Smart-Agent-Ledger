@@ -16,7 +16,7 @@ This matrix records what has been checked for `Smart Agent Ledger`. Keep it cons
 
 | Check | Status | Evidence |
 |---|---|---|
-| Python test suite | verified | `python -m pytest -q` returned `411 passed`. |
+| Python test suite | verified | `python -m pytest -q` returned `412 passed`. |
 | Dashboard JavaScript syntax | verified | `node --check static/dashboard.js` passed. |
 | Python module compile | verified | `python -m py_compile gateway.py fleet_ledger.py agent_ledger_server.py subscription_ledger.py` passed. |
 | Git whitespace check | verified | `git diff --check` passed before public push. |
@@ -45,6 +45,7 @@ This matrix records what has been checked for `Smart Agent Ledger`. Keep it cons
 | Local ledger API | unit-tested | `GET /agent-ledger?days=30&limit=120`. |
 | Team-node aggregation | unit-tested | `GET /fleet-ledger?days=30&limit=120` with fake node responses and cache cases. |
 | Read-only collector | unit-tested | Start `agent_ledger_server.py` and call `/health` and `/agent-ledger`. |
+| One-line collector bootstrap | unit-tested | `deploy/bootstrap-collector-node.sh` is covered for repository fetch, local install handoff, and registration wiring. |
 | Subscription ledger | unit-tested | `GET /subscription-ledger` with example config. |
 | Feishu/Lark reminders | unit-tested | Builds alert text and payloads; live delivery requires user credentials. |
 | Optional gateway proxy | unit-tested | Routing and dry-run behavior are covered; live provider calls require API keys. |
@@ -117,7 +118,7 @@ Pass condition:
 ## Known Gaps
 
 - No hosted demo site yet.
-- No one-command public collector installer yet.
+- One-command public collector installer is present; a fresh real-machine run should still be done before calling it production-proven.
 - Docker should be smoke-tested in a clean environment before a tagged release.
 - Very large long-running ledgers should move toward daily rollups for faster 30/90-day switching.
 - Team-node config still uses the legacy-compatible file name `company-agent-nodes.json`; the product UI should continue using the reader-facing term "team nodes".

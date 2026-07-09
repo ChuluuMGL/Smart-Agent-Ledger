@@ -11,7 +11,7 @@
 [![Local First](https://img.shields.io/badge/local--first-agent--ledger-0E5E43)](#why-this-exists)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](./pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688)](https://fastapi.tiangolo.com/)
-[![Tests](https://img.shields.io/badge/tests-411%20passing-green)](./TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-412%20passing-green)](./TESTING.md)
 [![License: AGPL](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 [![Security](https://img.shields.io/badge/security-local--network-orange)](./SECURITY.md)
 
@@ -201,10 +201,24 @@ git diff --check
 Current public release check:
 
 ```text
-411 passed
+412 passed
 ```
 
 See [`TESTING.md`](./TESTING.md) for the test matrix and recommended smoke tests.
+
+---
+
+## One-Line Collector Onboarding
+
+On a new trusted Mac, install the read-only collector and register it with your main gateway:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChuluuMGL/Smart-Agent-Ledger/main/deploy/bootstrap-collector-node.sh)" -- --main http://<mac-mini-tailscale-ip>:8001 --name "$(hostname -s)"
+```
+
+Add `--api-key <main-gateway-api-key>` if your main gateway protects `/admin/nodes`.
+
+The bootstrap script clones this repository into `~/.smart-agent-ledger/app`, installs the collector-only `8002` service, detects LAN and Tailscale URLs, and registers the node when `--main` is provided.
 
 ---
 
@@ -232,7 +246,7 @@ See [`SECURITY.md`](./SECURITY.md) for details.
 | Priority | Item | Why It Matters |
 |---|---|---|
 | P0 | Clearer data-trust labels in every KPI. | Prevents users from mistaking stale or partial totals for current truth. |
-| P0 | One-command collector install for new machines. | Makes team-node setup product-grade instead of ops-heavy. |
+| P0 | One-command collector install for new machines. | Included as `deploy/bootstrap-collector-node.sh`; needs more real-machine feedback. |
 | P1 | Daily rollups for very large local ledgers. | Keeps 30/90-day switching fast on long-running machines. |
 | P1 | Public demo screenshots and short walkthrough GIF. | Improves open-source trust and adoption. |
 | P2 | Optional OpenTelemetry or Prometheus export. | Lets teams integrate with existing observability stacks. |

@@ -11,7 +11,7 @@
 [![Local First](https://img.shields.io/badge/local--first-agent--ledger-0E5E43)](#为什么需要它)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](./pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688)](https://fastapi.tiangolo.com/)
-[![Tests](https://img.shields.io/badge/tests-411%20passing-green)](./TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-412%20passing-green)](./TESTING.md)
 [![License: AGPL](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 [![Security](https://img.shields.io/badge/security-local--network-orange)](./SECURITY.md)
 
@@ -201,10 +201,24 @@ git diff --check
 当前公开版本验证：
 
 ```text
-411 passed
+412 passed
 ```
 
 详见 [`TESTING.md`](./TESTING.md)。
+
+---
+
+## 新机器一键接入
+
+在新的可信 Mac 上，直接安装只读 collector 并注册到主节点：
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChuluuMGL/Smart-Agent-Ledger/main/deploy/bootstrap-collector-node.sh)" -- --main http://<mac-mini-tailscale-ip>:8001 --name "$(hostname -s)"
+```
+
+如果主节点 `/admin/nodes` 需要 API key，追加 `--api-key <main-gateway-api-key>`。
+
+这个 bootstrap 会把仓库克隆到 `~/.smart-agent-ledger/app`，安装只读 `8002` 采集服务，检测局域网和 Tailscale 地址，并在传入 `--main` 时注册节点。
 
 ---
 
@@ -232,7 +246,7 @@ Smart Agent Ledger 会读取本机 AI 工具日志，并可能通过 HTTP 暴露
 | 优先级 | 事项 | 价值 |
 |---|---|---|
 | P0 | 每个 KPI 都显示更清晰的数据可信标签。 | 避免用户把过期或部分总量误认为当前真实总量。 |
-| P0 | 新机器一条命令安装 collector。 | 让团队节点接入从运维动作变成产品体验。 |
+| P0 | 新机器一条命令安装 collector。 | 已提供 `deploy/bootstrap-collector-node.sh`，后续需要更多真实机器反馈。 |
 | P1 | 为超大本地账本做 daily rollup。 | 让 30/90 天切换在长期使用机器上仍然快速。 |
 | P1 | 公开 demo 截图和简短 walkthrough GIF。 | 提升开源可信度和 adoption。 |
 | P2 | 可选 OpenTelemetry 或 Prometheus export。 | 接入已有 observability 系统。 |

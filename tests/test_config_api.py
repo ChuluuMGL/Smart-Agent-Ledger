@@ -121,13 +121,37 @@ def test_readme_includes_open_source_demo_quickstart_without_private_paths():
     readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
 
     assert "SMART_AGENT_LEDGER_DEMO_MODE=1" in readme
-    assert "411%20passing" in readme
+    assert "412%20passing" in readme
     assert "OPEN_SOURCE_READINESS.md" in readme
     assert pathlib.Path("OPEN_SOURCE_READINESS.md").is_file()
     assert "tests-371" not in readme
     private_cloud_path = "Mobile " + "Documents/" + "com~apple~" + "Cloud" + "Docs"
     assert private_cloud_path not in readme
     assert private_cloud_path not in readme_zh
+
+
+def test_one_line_collector_bootstrap_is_documented_and_self_contained():
+    readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+    readme_zh = pathlib.Path("README.zh-CN.md").read_text(encoding="utf-8")
+    testing = pathlib.Path("TESTING.md").read_text(encoding="utf-8")
+    bootstrap = pathlib.Path("deploy/bootstrap-collector-node.sh").read_text(encoding="utf-8")
+    onboard = pathlib.Path("deploy/onboard-collector-node.sh").read_text(encoding="utf-8")
+    install = pathlib.Path("deploy/install-agent-ledger-readonly-launchd.sh").read_text(encoding="utf-8")
+    plist = pathlib.Path("deploy/com.smart-agent-ledger.agent-ledger.plist.example").read_text(encoding="utf-8")
+
+    combined_docs = "\n".join([readme, readme_zh, testing])
+    assert "bootstrap-collector-node.sh" in combined_docs
+    assert "raw.githubusercontent.com/ChuluuMGL/Smart-Agent-Ledger/main/deploy/bootstrap-collector-node.sh" in combined_docs
+    assert "--main http://<mac-mini-tailscale-ip>:8001" in combined_docs
+    assert "https://github.com/ChuluuMGL/Smart-Agent-Ledger.git" in bootstrap
+    assert "codeload.github.com/ChuluuMGL/Smart-Agent-Ledger" in bootstrap
+    assert "deploy/onboard-collector-node.sh" in bootstrap
+    assert "deploy/install-agent-ledger-readonly-launchd.sh" in onboard
+    assert "/admin/nodes" in onboard
+    assert "base_url_candidates" in onboard
+    assert "agent_ledger_server:app" in install
+    assert "com.smart-agent-ledger.agent-ledger" in plist
+    assert "sudo" not in "\n".join([bootstrap, onboard, install])
 
 
 def test_dashboard_allows_slow_fleet_cold_start():
