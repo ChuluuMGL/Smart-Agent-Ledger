@@ -8,7 +8,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>PROJECT_DIR="__PROJECT_DIR__"; cd "$PROJECT_DIR" &amp;&amp; exec "__PYTHON_BIN__" -m uvicorn agent_ledger_server:app --host 0.0.0.0 --port 8002 --no-access-log</string>
+        <string>PROJECT_DIR="__PROJECT_DIR__"; cd "$PROJECT_DIR" &amp;&amp; exec "__PYTHON_BIN__" -m uvicorn agent_ledger_server:app --host __BIND_HOST__ --port 8002 --no-access-log</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -21,6 +21,8 @@
     <string>__PROJECT_DIR__</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS</key>
+        <string>__ALLOWED_NETWORKS__</string>
         <key>PYTHONUTF8</key>
         <string>1</string>
         <key>LC_ALL</key>

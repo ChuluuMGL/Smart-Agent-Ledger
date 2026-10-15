@@ -30,6 +30,10 @@ Options:
 Environment variables with the same names are also supported:
   MAIN_GATEWAY_URL, GATEWAY_API_KEY, NODE_NAME,
   SMART_AGENT_LEDGER_DIR, SMART_AGENT_LEDGER_REPO_URL, SMART_AGENT_LEDGER_BRANCH.
+
+Access control: the collector (8002) answers loopback plus
+SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS (comma-separated CIDRs). When unset,
+it defaults to the IP of the --main host; without --main it stays loopback-only.
 EOF
 }
 
@@ -162,4 +166,5 @@ echo "Running collector onboarding from: $INSTALL_DIR"
 export MAIN_GATEWAY_URL
 export GATEWAY_API_KEY
 export NODE_NAME
+export SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS="${SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS:-}"
 bash deploy/onboard-collector-node.sh

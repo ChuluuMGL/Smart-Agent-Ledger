@@ -5,6 +5,8 @@ import pathlib
 
 import pytest
 
+from access_control import is_local_client
+
 # conftest.py 已将项目根目录加入 sys.path
 
 
@@ -155,9 +157,9 @@ class TestAuthDecisionLogic:
         # 公开端点
         if path == "/health":
             return "allow"
-        # 无认证配置 → 允许
+        # 无认证配置 → 仅本机 (loopback) 放行
         if not api_key_config and not networks:
-            return "allow"
+            return "allow" if is_local_client(client_ip, bridge_ips=()) else "deny"
         # IP 白名单
         if client_ip and _ip_in_whitelist(client_ip, networks):
             return "allow"
@@ -169,9 +171,15 @@ class TestAuthDecisionLogic:
     def test_health_always_public(self):
         assert self._check_auth("/health", "secret", [], "1.2.3.4", "") == "allow"
 
-    def test_no_auth_config_allows_all(self):
-        assert self._check_auth("/stats", "", [], "1.2.3.4", "") == "allow"
-        assert self._check_auth("/config", "", [], "", "") == "allow"
+    def test_no_auth_config_allows_loopback_only(self):
+        assert self._check_auth("/stats", "", [], "127.0.0.1", "") == "allow"
+        assert self._check_auth("/stats", "", [], "::1", "") == "allow"
+        assert self._check_auth("/stats", "", [], "1.2.3.4", "") == "deny"
+        assert self._check_auth("/config", "", [], "192.168.1.20", "") == "deny"
+        assert self._check_auth("/config", "", [], "", "") == "deny"
+
+    def test_no_auth_config_health_still_public(self):
+        assert self._check_auth("/health", "", [], "1.2.3.4", "") == "allow"
 
     def test_api_key_correct(self):
         assert self._check_auth("/stats", "my-key", [], "1.2.3.4", "my-key") == "allow"

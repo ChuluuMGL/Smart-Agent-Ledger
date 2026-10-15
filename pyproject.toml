@@ -41,7 +41,7 @@ dev = [
 smart-agent-ledger = "cli:main"
 
 [tool.setuptools]
-py-modules = ["gateway", "agent_ledger", "agent_ledger_server", "fleet_ledger", "subscription_ledger", "feishu_notifier", "cli", "utils"]
+py-modules = ["access_control", "gateway", "agent_ledger", "agent_ledger_server", "fleet_ledger", "subscription_ledger", "feishu_notifier", "cli", "utils"]
 
 [tool.setuptools.package-data]
 "*" = ["static/*.html", "static/*.css", "static/*.js", "data/*.example.json", "data/routing-keywords.json", "data/model-pricing.json"]

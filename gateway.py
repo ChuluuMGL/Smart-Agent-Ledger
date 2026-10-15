@@ -1,6 +1,7 @@
 """
 Smart Agent Ledger - local-first AI agent usage ledger with an optional gateway.
-Run from this directory with: uvicorn gateway:app --host 0.0.0.0 --port 8001
+Run from this directory with: uvicorn gateway:app --host 127.0.0.1 --port 8001
+(see README "Security defaults" before binding to another interface)
 """
 import logging
 from logging.handlers import RotatingFileHandler
@@ -14,6 +15,7 @@ import copy
 import datetime as dt
 import json
 import ipaddress
+import hmac
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager, suppress
 from zoneinfo import ZoneInfo
@@ -23,6 +25,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse, JSONRes
 import httpx
 from agent_ledger import build_agent_ledger, collect_sessions, query_sessions, record_gateway_event
 from utils import safe_read_json, load_env_file, mtime_cached
+import access_control
 from fleet_ledger import build_fleet_ledger, normalize_node_diagnostics, register_node, remove_node
 from feishu_notifier import CONFIG_PATH as FEISHU_CONFIG_PATH, build_alert_text, build_configured_alerts, build_reminder_windows, load_config as load_feishu_config, missing_send_fields, send_configured_alert
 from subscription_ledger import build_subscription_ledger, choose_provider_for_route
@@ -221,13 +224,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Smart Agent Ledger", lifespan=lifespan)
 
-# P2.2: CORS 中间件
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is configured after auth_middleware below (opt-in via SMART_AGENT_LEDGER_CORS_ORIGINS).
 
 # P2.2: 简易 IP 限流器（令牌桶）
 _RATE_LIMIT_MAX = 60          # 每个 IP 最多 60 个令牌
@@ -396,11 +393,7 @@ def _get_authorized_networks() -> list:
 
 def _ip_in_whitelist(client_ip: str) -> bool:
     """检查客户端 IP 是否在 authorized_networks 白名单内。"""
-    try:
-        addr = ipaddress.ip_address(client_ip)
-        return any(addr in net for net in _get_authorized_networks())
-    except (ValueError, TypeError):
-        return False
+    return access_control.ip_in_networks(client_ip, _get_authorized_networks())
 
 
 def _has_auth_configured() -> bool:
@@ -410,36 +403,108 @@ def _has_auth_configured() -> bool:
 
 _AUTH_PUBLIC_PATHS = frozenset({"/health"})
 
+# Extra non-IP client / Host names treated as local. Empty in production;
+# the test suite sets it to Starlette TestClient's placeholder names.
+_EXTRA_LOCAL_NAMES: frozenset = frozenset()
+
+
+def _cors_origins() -> List[str]:
+    return [access_control.normalize_origin(o) for o in access_control.env_list("SMART_AGENT_LEDGER_CORS_ORIGINS")]
+
+
+_CORS_ORIGINS = _cors_origins()
+
+
+def _allowed_host_names() -> List[str]:
+    return list(_EXTRA_LOCAL_NAMES) + access_control.env_list("SMART_AGENT_LEDGER_ALLOWED_HOSTS")
+
+
+def _is_local_client(client_ip: str) -> bool:
+    """Loopback client, or the Docker bridge gateway when explicitly trusted."""
+    return access_control.is_local_client(client_ip, extra_local_names=_EXTRA_LOCAL_NAMES)
+
+
+def _api_key_matches(provided: Optional[str]) -> bool:
+    if not _GW_API_KEY or not provided:
+        return False
+    return hmac.compare_digest(provided.encode("utf-8"), _GW_API_KEY.encode("utf-8"))
+
+
+_NO_AUTH_REMOTE_DETAIL = (
+    "Forbidden: this Smart Agent Ledger instance has no authentication configured, "
+    "so it only accepts requests from this machine (loopback). "
+    "To allow other machines, set GATEWAY_API_KEY (clients send it as the X-API-Key header) "
+    "and/or add CIDRs to authorized_networks in data/company-agent-nodes.json. "
+    "In Docker with a loopback-published port, set SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1."
+)
+
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """API Key + IP 白名单双重认证。仅 /health 公开。
+    """Access control. Only /health is public.
 
-    - 未配置 GATEWAY_API_KEY 且无 authorized_networks → 允许所有（向后兼容）
-    - 客户端 IP 在白名单内 → 直接放行
-    - 否则需 X-API-Key 请求头 == GATEWAY_API_KEY
+    - State-changing browser requests from a foreign Origin are rejected (CSRF guard).
+    - No GATEWAY_API_KEY and no authorized_networks -> loopback clients only
+      (plus the trusted Docker bridge gateway), with a loopback Host header.
+    - Client IP in authorized_networks -> allowed.
+    - Otherwise the X-API-Key header must equal GATEWAY_API_KEY.
     """
     if request.url.path in _AUTH_PUBLIC_PATHS:
         return await call_next(request)
 
-    # 未配置任何认证方式 → 允许所有（向后兼容，不破坏现有本地使用）
-    if not _has_auth_configured():
-        return await call_next(request)
-
     client_ip = request.client.host if request.client else ""
+
+    if request.method.upper() not in access_control.SAFE_METHODS and not access_control.origin_allowed(
+        request.headers.get("origin"), request.headers.get("host"), _CORS_ORIGINS
+    ):
+        log.warning("跨域写请求被拒绝: path=%s ip=%s origin=%s", request.url.path, client_ip, request.headers.get("origin"))
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Forbidden: cross-origin request. Add the origin to SMART_AGENT_LEDGER_CORS_ORIGINS to allow it."},
+        )
+
+    # No auth configured -> local-only mode.
+    if not _has_auth_configured():
+        if not _is_local_client(client_ip):
+            log.warning("未配置认证,拒绝非本机请求: path=%s ip=%s", request.url.path, client_ip)
+            return JSONResponse(status_code=403, content={"detail": _NO_AUTH_REMOTE_DETAIL, "client_ip": client_ip})
+        if not access_control.host_header_is_local(request.headers.get("host"), _allowed_host_names()):
+            log.warning("未配置认证,拒绝非本机 Host: path=%s host=%s", request.url.path, request.headers.get("host"))
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "Forbidden: Host header is not a loopback name. Use http://127.0.0.1 or "
+                    "http://localhost, add the name to SMART_AGENT_LEDGER_ALLOWED_HOSTS, or configure GATEWAY_API_KEY."
+                },
+            )
+        return await call_next(request)
 
     # IP 白名单校验
     if _ip_in_whitelist(client_ip):
         return await call_next(request)
 
-    # API Key 校验
-    if _GW_API_KEY and request.headers.get("X-API-Key") == _GW_API_KEY:
+    # API Key 校验 (constant-time)
+    if _api_key_matches(request.headers.get("X-API-Key")):
         return await call_next(request)
 
     log.warning("认证失败: path=%s ip=%s", request.url.path, client_ip)
     return JSONResponse(
         status_code=401,
         content={"detail": "Unauthorized. Provide X-API-Key header or connect from authorized network."},
+    )
+
+
+# CORS: disabled unless SMART_AGENT_LEDGER_CORS_ORIGINS lists origins. The built-in
+# dashboard is served same-origin and needs no CORS. Added after auth_middleware so
+# it wraps it (preflight requests are answered before auth runs).
+if _CORS_ORIGINS:
+    if "*" in _CORS_ORIGINS:
+        log.warning("SMART_AGENT_LEDGER_CORS_ORIGINS contains '*': any website can call this API from a browser.")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_CORS_ORIGINS,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-API-Key", "Authorization"],
     )
 
 # ========== Providers (OpenAI Compatible) ==========

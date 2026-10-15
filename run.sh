@@ -1,6 +1,10 @@
 #!/bin/bash
 # Start Smart Agent Ledger from this directory on port 8001.
 # Before use: cp keys.env.example keys.env and fill in real keys.
+#
+# Binds to 127.0.0.1 by default (this machine only). To serve other machines
+# (LAN / Fleet), set GATEWAY_HOST=0.0.0.0 AND configure GATEWAY_API_KEY or
+# authorized_networks; without auth, non-loopback clients get 403.
 
 cd "$(dirname "$0")"
 
@@ -39,8 +43,14 @@ if ! "$PYTHON_BIN" -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
   exit 1
 fi
 
-echo "Environment loaded. Starting Smart Agent Ledger on port 8001 ..."
-UVICORN_ARGS=(gateway:app --host 0.0.0.0 --port 8001)
+GATEWAY_HOST="${GATEWAY_HOST:-127.0.0.1}"
+if [ "$GATEWAY_HOST" != "127.0.0.1" ] && [ "$GATEWAY_HOST" != "localhost" ] && [ "$GATEWAY_HOST" != "::1" ] && [ -z "${GATEWAY_API_KEY:-}" ]; then
+  echo "Warning: GATEWAY_HOST=$GATEWAY_HOST but GATEWAY_API_KEY is empty."
+  echo "  Non-loopback clients will get 403 unless authorized_networks is set in data/company-agent-nodes.json."
+fi
+
+echo "Environment loaded. Starting Smart Agent Ledger on http://${GATEWAY_HOST}:8001 ..."
+UVICORN_ARGS=(gateway:app --host "$GATEWAY_HOST" --port 8001)
 if [ "${GATEWAY_ACCESS_LOG:-0}" != "1" ]; then
   UVICORN_ARGS+=(--no-access-log)
 fi

@@ -1,5 +1,7 @@
 # Smart Agent Ledger
 
+> **Status: archived / unmaintained.** This repository is no longer maintained and is read-only. Issues and pull requests are not monitored. The final update (October 2026) changed the network defaults to local-only; see [Security defaults](#security-defaults). Fork it if you want to keep using or developing it.
+
 > **Local-first AI agent usage ledger for developers and small teams**
 >
 > An open-source dashboard for tracking tokens, costs, subscriptions, projects, and team-node usage across AI coding tools such as Codex, Claude Code, Cursor, Trae, Hermes, OpenClaw, and LiteLLM.
@@ -60,11 +62,15 @@ chmod 600 keys.env
 ./run.sh
 ```
 
-Docker:
+`run.sh` listens on `127.0.0.1:8001` only. See [Security defaults](#security-defaults) for LAN / Fleet mode.
+
+Docker (published on this machine's loopback only):
 
 ```bash
 docker build -t smart-agent-ledger .
-docker run -p 8001:8001 -v "$PWD/data:/app/data" smart-agent-ledger
+docker run -p 127.0.0.1:8001:8001 -e SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1 \
+  -v "$PWD/data:/app/data" smart-agent-ledger
+# or: docker compose up -d   (also publishes on 127.0.0.1 by default)
 ```
 
 ---
@@ -216,9 +222,16 @@ On a new trusted Mac, install the read-only collector and register it with your 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChuluuMGL/Smart-Agent-Ledger/main/deploy/bootstrap-collector-node.sh)" -- --main http://<mac-mini-tailscale-ip>:8001 --name "$(hostname -s)"
 ```
 
-Add `--api-key <main-gateway-api-key>` if your main gateway protects `/admin/nodes`.
+Add `--api-key <main-gateway-api-key>` if your main gateway protects `/admin/nodes`. The main gateway must be in LAN / Fleet mode (see [Security defaults](#security-defaults)) to accept the registration.
 
 The bootstrap script clones this repository into `~/.smart-agent-ledger/app`, installs the collector-only `8002` service, detects LAN and Tailscale URLs, and registers the node when `--main` is provided.
+
+The collector only answers loopback and the IPs in `SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS`. When that variable is unset, the onboarding script fills in the IP of the `--main` host. Without `--main`, the collector binds to `127.0.0.1` only. If the main node reaches the collector from a different address (for example over the LAN instead of Tailscale), list both addresses:
+
+```bash
+SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=100.101.102.103/32,192.168.1.10/32 \
+  bash ~/.smart-agent-ledger/app/deploy/onboard-collector-node.sh
+```
 
 ---
 
@@ -236,6 +249,34 @@ Do not commit:
 - runtime logs, local cache files, or private machine paths
 
 Do not expose ports `8001` or `8002` directly to the public internet.
+
+### Security defaults
+
+| Setting | Default | How to change |
+|---|---|---|
+| Gateway bind address (`run.sh`) | `127.0.0.1` | `GATEWAY_HOST=0.0.0.0 ./run.sh` |
+| Docker / compose published port | `127.0.0.1:8001` | compose: `SMART_AGENT_LEDGER_BIND=0.0.0.0`; `docker run`: `-p 8001:8001` |
+| Access with no auth configured | loopback clients only (`127.0.0.0/8`, `::1`); others get `403` | set `GATEWAY_API_KEY` and/or `authorized_networks` |
+| Docker bridge gateway counts as local | off (compose sets it on) | `SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1` (auto-detect) or a comma-separated IP list |
+| Host header (no-auth mode) | must be `localhost`, `*.localhost` or a loopback IP | `SMART_AGENT_LEDGER_ALLOWED_HOSTS=name1,name2` |
+| CORS | off (the dashboard is same-origin) | `SMART_AGENT_LEDGER_CORS_ORIGINS=https://a.example,https://b.example` |
+| Cross-origin `POST`/`PUT`/`PATCH`/`DELETE` from browsers | rejected with `403` | the origin must be listed in `SMART_AGENT_LEDGER_CORS_ORIGINS` |
+| Collector (`8002`) | binds to `127.0.0.1`; serves `/agent-ledger` to loopback only | `SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=<cidr>,...` (bind becomes `0.0.0.0`) |
+
+`/health` is always public. The `X-API-Key` comparison is constant-time.
+
+**LAN / Fleet mode (main gateway).** Other machines can reach the gateway only after you configure authentication:
+
+```bash
+# keys.env
+GATEWAY_API_KEY=<long-random-secret>      # e.g. openssl rand -hex 32
+# start
+GATEWAY_HOST=0.0.0.0 ./run.sh
+```
+
+Clients send the key as the `X-API-Key` header. To let specific networks in without a key, add CIDRs to `authorized_networks` in `data/company-agent-nodes.json`, for example `["100.64.0.0/10"]` for a Tailscale tailnet. When an API key or `authorized_networks` is configured, loopback requests also need the key unless `127.0.0.1/32` is listed.
+
+With Docker Compose, put `GATEWAY_API_KEY` in `.env` and set `SMART_AGENT_LEDGER_BIND=0.0.0.0` and `SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=0`.
 
 See [`SECURITY.md`](./SECURITY.md) for details.
 

@@ -5,11 +5,17 @@
 # agent_ledger_server.py separately on trusted machines.
 #
 # 构建:  docker build -t smart-agent-ledger .
-# Run:   docker run -d -p 8001:8001 \
+# Run (this machine only — publish on loopback and trust the Docker bridge):
+#        docker run -d -p 127.0.0.1:8001:8001 \
+#          -e SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1 \
 #          -v "$PWD/data:/app/data" \
 #          -v "$PWD/keys.env:/app/keys.env:ro" \
-#          -e GATEWAY_API_KEY=your-secret \
 #          --name gateway smart-agent-ledger
+# LAN / Fleet: publish with -p 8001:8001, set -e GATEWAY_API_KEY=your-secret,
+#        and do NOT set SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE.
+#
+# The container listens on 0.0.0.0 internally (required for port publishing);
+# access control is enforced by the published address and gateway auth.
 # =============================================================================
 FROM python:3.13-slim
 
@@ -36,5 +42,6 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -sf http://127.0.0.1:8001/health || exit 1
 
-# Start the main API/dashboard process.
+# Start the main API/dashboard process. 0.0.0.0 is the container-internal
+# interface; restrict exposure with the published port (see above).
 CMD ["python", "-m", "uvicorn", "gateway:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -30,8 +30,38 @@ detect_tailscale_ip() {
   return 0
 }
 
+# Who may read this collector's /agent-ledger besides loopback. Defaults to the
+# IP(s) of MAIN_GATEWAY_URL's host; override with comma-separated CIDRs, e.g.
+#   SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=100.101.102.103/32,192.168.1.10/32
+if [ -z "${SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS:-}" ] && [ -n "$MAIN_GATEWAY_URL" ]; then
+  SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS="$(python3 - "$MAIN_GATEWAY_URL" <<'PY'
+import ipaddress
+import socket
+import sys
+from urllib.parse import urlsplit
+
+host = urlsplit(sys.argv[1]).hostname or ""
+ips = set()
+try:
+    ips.add(ipaddress.ip_address(host))
+except ValueError:
+    try:
+        for info in socket.getaddrinfo(host, None):
+            ips.add(ipaddress.ip_address(info[4][0].split("%", 1)[0]))
+    except (OSError, ValueError):
+        pass
+print(",".join(f"{ip}/{ip.max_prefixlen}" for ip in sorted(ips, key=str) if not ip.is_loopback))
+PY
+)"
+fi
+export SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS="${SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS:-}"
+
 echo "Installing read-only Agent ledger service..."
 "$PROJECT_DIR/deploy/install-agent-ledger-readonly-launchd.sh"
+if [ -z "$SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS" ]; then
+  echo "Note: no allowed networks configured; this collector only answers on 127.0.0.1." >&2
+  echo "  Rerun with MAIN_GATEWAY_URL=... or SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=<main-node-ip>/32" >&2
+fi
 
 echo "Checking local service..."
 if ! curl -fsS "http://127.0.0.1:${LEDGER_PORT}/health" >/dev/null; then
@@ -86,7 +116,11 @@ PY
 cat <<EOF
 
 One-command install/register for a new collector machine:
-  MAIN_GATEWAY_URL=${MAIN_GATEWAY_URL:-http://<main-node-ip>:8001} GATEWAY_API_KEY=<optional-api-key> NODE_NAME=${NODE_NAME} bash deploy/onboard-collector-node.sh
+  MAIN_GATEWAY_URL=${MAIN_GATEWAY_URL:-http://<main-node-ip>:8001} GATEWAY_API_KEY=<api-key> NODE_NAME=${NODE_NAME} bash deploy/onboard-collector-node.sh
+
+Collector access allowlist (besides loopback): ${SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS:-<none>}
+  If the main node reaches this machine from another IP (LAN vs Tailscale), add it:
+  SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=<ip>/32,<ip2>/32 bash deploy/onboard-collector-node.sh
 
 Candidate URLs this node advertised:
   ${BASE_URL}

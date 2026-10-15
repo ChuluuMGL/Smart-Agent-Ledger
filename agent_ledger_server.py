@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Read-only agent ledger service for collector-only Macs."""
+"""Read-only agent ledger service for collector-only Macs.
+
+Access policy: /health is public; /agent-ledger is served only to loopback
+clients and to client IPs inside SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS
+(comma-separated CIDRs, e.g. the main node's Tailscale IP "100.101.102.103/32").
+The launchd installer binds 127.0.0.1 unless an allowlist is configured.
+"""
 import asyncio
 import copy
 import datetime as dt
@@ -10,8 +16,10 @@ import time
 from contextlib import suppress
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+import access_control
 from agent_ledger import build_agent_ledger
 from utils import safe_int as _safe_int, safe_read_json, utc_now as _now
 
@@ -28,6 +36,43 @@ READONLY_LEDGER_DISK_CACHE_DIR = pathlib.Path(
 )
 READONLY_LEDGER_CACHE: Dict[tuple, Dict[str, Any]] = {}
 READONLY_LEDGER_TASKS: Dict[tuple, asyncio.Task] = {}
+
+_PUBLIC_PATHS = frozenset({"/health"})
+# Extra non-IP client names treated as local. Empty in production; tests set it.
+_EXTRA_LOCAL_NAMES: frozenset = frozenset()
+
+
+def _allowed_networks() -> list:
+    return access_control.parse_networks(access_control.env_list("SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS"))
+
+
+def _client_allowed(client_host: Optional[str], host_header: Optional[str] = None) -> bool:
+    if access_control.ip_in_networks(client_host, _allowed_networks()):
+        return True
+    if access_control.is_local_client(client_host, extra_local_names=_EXTRA_LOCAL_NAMES):
+        # Loopback callers must also use a loopback Host name (DNS-rebinding guard).
+        return access_control.host_header_is_local(
+            host_header,
+            list(_EXTRA_LOCAL_NAMES) + access_control.env_list("SMART_AGENT_LEDGER_ALLOWED_HOSTS"),
+        )
+    return False
+
+
+@app.middleware("http")
+async def access_middleware(request: Request, call_next):
+    if request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+    client_host = request.client.host if request.client else ""
+    if not _client_allowed(client_host, request.headers.get("host")):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Forbidden: this collector only serves loopback clients and "
+                "SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS. Add the main node's IP/CIDR there.",
+                "client_ip": client_host,
+            },
+        )
+    return await call_next(request)
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:

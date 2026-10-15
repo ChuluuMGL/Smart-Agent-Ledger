@@ -1,5 +1,7 @@
 # Testing Matrix
 
+> The project is archived. The table below records the last checks that were run. It is not updated anymore.
+
 This matrix records what has been checked for `Smart Agent Ledger`. Keep it conservative: only mark a source or runtime as verified after a realistic run, not just because code paths exist.
 
 ## Status Legend
@@ -21,6 +23,7 @@ This matrix records what has been checked for `Smart Agent Ledger`. Keep it cons
 | Python module compile | verified | `python -m py_compile gateway.py fleet_ledger.py agent_ledger_server.py subscription_ledger.py` passed. |
 | Git whitespace check | verified | `git diff --check` passed before public push. |
 | Public sanitization scan | verified | Scanned for private paths, internal repo names, real machine names, and private IP fragments before release. |
+| Security defaults (final update) | unit-tested | `tests/test_access_control.py` and `tests/test_auth.py` cover: no auth plus non-loopback client gives `403`, no auth plus loopback is allowed, `/health` is always open, no CORS header for a random origin, cross-origin writes are rejected, DNS-rebinding `Host` is rejected, and the collector allowlist works. FastAPI and pytest could not be installed where this update was written, so the full suite was not re-run against it. The pure-logic tests and an ASGI-level middleware harness were run instead and passed. Run `python -m pytest -q` to confirm. |
 | Demo mode | demo-verified | `SMART_AGENT_LEDGER_DEMO_MODE=1` returns anonymized `/agent-ledger`, `/fleet-ledger`, `/subscription-ledger`, and `/feishu-reminder` data. |
 
 ## Agent Data Source Matrix
@@ -88,7 +91,7 @@ Pass condition:
 ### Read-only Collector
 
 ```bash
-python agent_ledger_server.py --host 127.0.0.1 --port 8002
+uvicorn agent_ledger_server:app --host 127.0.0.1 --port 8002
 curl http://127.0.0.1:8002/health
 curl "http://127.0.0.1:8002/agent-ledger?days=30&limit=120"
 ```
@@ -98,13 +101,26 @@ Pass condition:
 - The collector starts without the main gateway.
 - It exposes read-only ledger data only.
 - It does not proxy model requests.
+- A request from another machine to `/agent-ledger` returns `403` unless its IP is in `SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS`.
+
+### Network Defaults
+
+```bash
+./run.sh                                   # listens on 127.0.0.1:8001 only
+curl -i http://127.0.0.1:8001/stats        # 200 from this machine (no auth configured)
+# from another machine, after GATEWAY_HOST=0.0.0.0 ./run.sh without GATEWAY_API_KEY:
+curl -i http://<main-ip>:8001/stats        # 403, with instructions to set GATEWAY_API_KEY / authorized_networks
+curl -i http://<main-ip>:8001/health       # 200
+curl -i -H "Origin: https://example.org" http://127.0.0.1:8001/health   # no Access-Control-Allow-Origin header
+docker compose up -d && docker compose port gateway 8001                # 127.0.0.1:8001
+```
 
 ### Final Release Check
 
 ```bash
 python -m pytest -q
 node --check static/dashboard.js
-python -m py_compile gateway.py fleet_ledger.py agent_ledger_server.py subscription_ledger.py
+python -m py_compile access_control.py gateway.py fleet_ledger.py agent_ledger_server.py subscription_ledger.py
 git diff --check
 ```
 

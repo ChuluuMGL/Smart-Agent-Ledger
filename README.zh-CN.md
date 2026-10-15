@@ -1,5 +1,7 @@
 # Smart Agent Ledger
 
+> **状态：已归档，不再维护。** 本仓库已停止维护，处于只读状态，不再处理 Issue 和 Pull Request。最后一次更新（2026 年 10 月）把网络默认配置改成了仅本机访问，见[安全默认值](#安全默认值)。如需继续使用或开发，请自行 fork。
+
 > **面向开发者和小团队的本地优先 AI Agent 用量账本**
 >
 > 一个开源仪表盘，用来统一追踪 Codex、Claude Code、Cursor、Trae、Hermes、OpenClaw、LiteLLM 等 AI 编程工具的 token、成本、订阅、项目和团队节点使用情况。
@@ -60,11 +62,15 @@ chmod 600 keys.env
 ./run.sh
 ```
 
-Docker：
+`run.sh` 只监听 `127.0.0.1:8001`。局域网 / Fleet 模式见[安全默认值](#安全默认值)。
+
+Docker（只发布到本机回环地址）：
 
 ```bash
 docker build -t smart-agent-ledger .
-docker run -p 8001:8001 -v "$PWD/data:/app/data" smart-agent-ledger
+docker run -p 127.0.0.1:8001:8001 -e SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1 \
+  -v "$PWD/data:/app/data" smart-agent-ledger
+# 或：docker compose up -d（默认同样只发布到 127.0.0.1）
 ```
 
 ---
@@ -216,9 +222,16 @@ git diff --check
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ChuluuMGL/Smart-Agent-Ledger/main/deploy/bootstrap-collector-node.sh)" -- --main http://<mac-mini-tailscale-ip>:8001 --name "$(hostname -s)"
 ```
 
-如果主节点 `/admin/nodes` 需要 API key，追加 `--api-key <main-gateway-api-key>`。
+如果主节点 `/admin/nodes` 需要 API key，追加 `--api-key <main-gateway-api-key>`。主节点必须处于局域网 / Fleet 模式（见[安全默认值](#安全默认值)）才能接受注册。
 
 这个 bootstrap 会把仓库克隆到 `~/.smart-agent-ledger/app`，安装只读 `8002` 采集服务，检测局域网和 Tailscale 地址，并在传入 `--main` 时注册节点。
+
+collector 只响应本机回环地址和 `SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS` 中的 IP。该变量未设置时，接入脚本会自动填入 `--main` 主机的 IP；没有 `--main` 时，collector 只绑定 `127.0.0.1`。如果主节点通过另一个地址访问 collector（例如走局域网而不是 Tailscale），请把两个地址都列出：
+
+```bash
+SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=100.101.102.103/32,192.168.1.10/32 \
+  bash ~/.smart-agent-ledger/app/deploy/onboard-collector-node.sh
+```
 
 ---
 
@@ -236,6 +249,34 @@ Smart Agent Ledger 会读取本机 AI 工具日志，并可能通过 HTTP 暴露
 - runtime logs、本地缓存文件、私有机器路径
 
 不要把 `8001` 或 `8002` 直接暴露到公网。
+
+### 安全默认值
+
+| 项目 | 默认值 | 修改方式 |
+|---|---|---|
+| 主服务监听地址（`run.sh`） | `127.0.0.1` | `GATEWAY_HOST=0.0.0.0 ./run.sh` |
+| Docker / compose 发布端口 | `127.0.0.1:8001` | compose：`SMART_AGENT_LEDGER_BIND=0.0.0.0`；`docker run`：`-p 8001:8001` |
+| 未配置认证时的访问 | 仅本机回环客户端（`127.0.0.0/8`、`::1`），其他返回 `403` | 设置 `GATEWAY_API_KEY` 和/或 `authorized_networks` |
+| Docker bridge 网关视为本机 | 关闭（compose 默认开启） | `SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1`（自动检测）或逗号分隔的 IP 列表 |
+| Host 请求头（无认证模式） | 必须是 `localhost`、`*.localhost` 或回环 IP | `SMART_AGENT_LEDGER_ALLOWED_HOSTS=name1,name2` |
+| CORS | 关闭（仪表盘同源访问，不需要 CORS） | `SMART_AGENT_LEDGER_CORS_ORIGINS=https://a.example,https://b.example` |
+| 浏览器跨域 `POST`/`PUT`/`PATCH`/`DELETE` | 返回 `403` | 来源需列在 `SMART_AGENT_LEDGER_CORS_ORIGINS` 中 |
+| Collector（`8002`） | 绑定 `127.0.0.1`，`/agent-ledger` 仅对本机开放 | `SMART_AGENT_LEDGER_COLLECTOR_ALLOWED_NETWORKS=<cidr>,...`（监听地址随之变为 `0.0.0.0`） |
+
+`/health` 始终公开。`X-API-Key` 使用常量时间比较。
+
+**局域网 / Fleet 模式（主节点）。** 只有配置认证之后，其他机器才能访问主服务：
+
+```bash
+# keys.env
+GATEWAY_API_KEY=<长随机密钥>      # 例如 openssl rand -hex 32
+# 启动
+GATEWAY_HOST=0.0.0.0 ./run.sh
+```
+
+客户端通过 `X-API-Key` 请求头携带密钥。如需让特定网段免密钥访问，把 CIDR 加到 `data/company-agent-nodes.json` 的 `authorized_networks` 中，例如 Tailscale 网段 `["100.64.0.0/10"]`。配置了 API key 或 `authorized_networks` 之后，本机请求同样需要密钥，除非把 `127.0.0.1/32` 也加入列表。
+
+使用 Docker Compose 时，在 `.env` 中设置 `GATEWAY_API_KEY`，并设置 `SMART_AGENT_LEDGER_BIND=0.0.0.0` 和 `SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=0`。
 
 更多见 [`SECURITY.md`](./SECURITY.md)。
 

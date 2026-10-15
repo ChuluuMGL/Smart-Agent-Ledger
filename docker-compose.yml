@@ -2,7 +2,14 @@
 # Smart Agent Ledger — local compose setup
 #
 # 用法:  docker compose up -d
-# Auth: set GATEWAY_API_KEY in .env or export it before starting.
+# Default: the port is published on 127.0.0.1 only (this machine). Requests
+#   through that loopback port reach the container from the Docker bridge
+#   gateway, which SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=1 treats as local.
+# LAN / Fleet opt-in:
+#   1. set GATEWAY_API_KEY (in .env or the shell) — required,
+#   2. set SMART_AGENT_LEDGER_BIND=0.0.0.0,
+#   3. set SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=0 (with userland-proxy /
+#      Docker Desktop, LAN clients can also appear as the bridge gateway).
 # Data: ./data persists config/logs/events; ./keys.env provides API keys.
 # =============================================================================
 services:
@@ -11,15 +18,20 @@ services:
     image: smart-agent-ledger:latest
     container_name: smart-agent-ledger
     ports:
-      - "${SMART_AGENT_LEDGER_PORT:-8001}:8001"
+      - "${SMART_AGENT_LEDGER_BIND:-127.0.0.1}:${SMART_AGENT_LEDGER_PORT:-8001}:8001"
     volumes:
       # Persist config, logs, and event ledgers.
       - ./data:/app/data
       # API keys, read-only. Can be empty for demo/local ledger use.
       - ./keys.env:/app/keys.env:ro
     environment:
-      # Endpoint auth key. Required before exposing beyond a trusted network.
+      # Endpoint auth key. Required before exposing beyond this machine.
       - GATEWAY_API_KEY=${GATEWAY_API_KEY:-}
+      # Treat the Docker bridge gateway (= loopback-published traffic) as local
+      # when no auth is configured. Set to 0 when publishing on the LAN.
+      - SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE=${SMART_AGENT_LEDGER_TRUST_DOCKER_BRIDGE:-1}
+      # Optional comma-separated browser origins allowed to call the API (CORS).
+      - SMART_AGENT_LEDGER_CORS_ORIGINS=${SMART_AGENT_LEDGER_CORS_ORIGINS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8001/health"]
